@@ -1015,6 +1015,18 @@ async def startup():
         logger.info("System admin seeded.")
     elif not auth_lib.verify_password(pwd, existing["password_hash"]):
         await db.users.update_one({"username": uname}, {"$set": {"password_hash": auth_lib.hash_password(pwd)}})
+    # Additional named system administrator
+    alan = await db.users.find_one({"username": "alan_teixeira"})
+    if not alan:
+        await db.users.insert_one({
+            "username": "alan_teixeira", "password_hash": auth_lib.hash_password("ifma2013"),
+            "nome": "Alan Teixeira", "funcao": "Administrador do Sistema",
+            "role": "system_admin", "company_id": None, "validated": True,
+            "must_change_password": False, "permissions": {}, "active": True,
+            "created_at": now_iso()})
+        logger.info("System admin 'alan_teixeira' seeded.")
+    elif alan.get("role") != "system_admin":
+        await db.users.update_one({"username": "alan_teixeira"}, {"$set": {"role": "system_admin", "company_id": None, "validated": True}})
 
 
 @app.on_event("shutdown")
