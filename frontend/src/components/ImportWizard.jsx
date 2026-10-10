@@ -51,11 +51,12 @@ export default function ImportWizard({ open, onClose, title, endpoint, onDone })
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent className="max-w-3xl" data-testid="import-wizard">
-        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
-        <div className="space-y-4">
+      <DialogContent className="max-w-3xl p-0 gap-0 flex flex-col max-h-[90vh]" data-testid="import-wizard">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0"><DialogTitle>{title}</DialogTitle></DialogHeader>
+
+        <div className="px-6 py-4 space-y-4 shrink-0">
           <div
-            className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/60 transition-colors"
+            className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-primary/60 transition-colors"
             onClick={() => inputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) { setFile(f); doPreview(f); } }}
@@ -80,36 +81,38 @@ export default function ImportWizard({ open, onClose, title, endpoint, onDone })
           )}
 
           {preview && preview.valid && (
-            <div className="space-y-3">
-              <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 flex gap-3">
-                <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-                <div className="text-sm">
-                  <p className="font-medium text-emerald-400">{preview.message}</p>
-                  <p className="text-muted-foreground">{preview.total} registros válidos encontrados.</p>
-                </div>
+            <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 flex gap-3">
+              <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-emerald-400">{preview.message}</p>
+                <p className="text-muted-foreground">{preview.total} registros válidos encontrados.</p>
               </div>
-              {cols.length > 0 && (
-                <div className="overflow-auto rounded-lg border border-border max-h-64">
-                  <table className="w-full text-xs font-mono border-collapse">
-                    <thead className="bg-secondary sticky top-0"><tr>{cols.map((c) => <th key={c} className="border border-border px-2 py-1.5 text-left">{c}</th>)}</tr></thead>
-                    <tbody>
-                      {preview.preview.map((r, i) => (
-                        <tr key={i} className="hover:bg-accent/40">{cols.map((c) => <td key={c} className="border border-border px-2 py-1 whitespace-nowrap">{String(r[c] ?? "")}</td>)}</tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </div>
           )}
+        </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={close} data-testid="import-cancel-btn">Cancelar</Button>
-            <Button onClick={doCommit} disabled={!preview?.valid || committing} data-testid="import-confirm-btn">
-              {committing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <FileSpreadsheet className="h-4 w-4 mr-1" />}
-              Importar
-            </Button>
+        {preview && preview.valid && cols.length > 0 && (
+          <div className="flex-1 min-h-0 px-6 pb-2 flex flex-col">
+            <p className="text-xs font-medium text-muted-foreground mb-2 shrink-0">Pré-visualização dos dados</p>
+            <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-border">
+              <table className="text-xs font-mono border-collapse">
+                <thead className="bg-secondary sticky top-0 z-10"><tr>{cols.map((c) => <th key={c} className="border border-border px-2 py-1.5 text-left whitespace-nowrap">{c}</th>)}</tr></thead>
+                <tbody>
+                  {preview.preview.map((r, i) => (
+                    <tr key={i} className="hover:bg-accent/40">{cols.map((c) => <td key={c} className="border border-border px-2 py-1 whitespace-nowrap">{String(r[c] ?? "")}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
+        )}
+
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-border shrink-0 bg-card">
+          <Button variant="outline" onClick={close} data-testid="import-cancel-btn">Cancelar</Button>
+          <Button onClick={doCommit} disabled={!preview?.valid || committing} data-testid="import-confirm-btn">
+            {committing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <FileSpreadsheet className="h-4 w-4 mr-1" />}
+            Importar
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
