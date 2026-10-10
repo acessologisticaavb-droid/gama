@@ -1,0 +1,150 @@
+{
+  "project_name": "GAMA — Gestão Industrial",
+  "app_type": "hybrid_fullstack",
+  "archetype": "THE PERFORMANCE PRO / SWISS INDUSTRIAL",
+  "locale": "pt-BR",
+  "theme": {
+    "default_mode": "dark",
+    "supported_modes": ["dark", "light"],
+    "toggle_supported": true
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Manrope, 'Cabinet Grotesk', system-ui, sans-serif",
+      "body": "Inter, 'IBM Plex Sans', system-ui, sans-serif",
+      "mono": "'JetBrains Mono', 'Source Code Pro', monospace"
+    },
+    "hierarchy": {
+      "h1": "text-3xl sm:text-4xl font-bold tracking-tight text-slate-100",
+      "h2": "text-xl sm:text-2xl font-semibold tracking-tight text-slate-100",
+      "h3": "text-lg sm:text-xl font-medium text-slate-200",
+      "h4": "text-base font-medium text-slate-300",
+      "body": "text-sm text-slate-300 leading-relaxed",
+      "small": "text-xs text-slate-400 font-mono",
+      "label": "text-xs font-semibold uppercase tracking-wider text-slate-400"
+    }
+  },
+  "colors": {
+    "palette_name": "Industrial Cybernetic Slate",
+    "forbidden_colors": ["#7351B7", "#1B93A4"],
+    "dark_mode": {
+      "bg_base": "#0B0F17",
+      "bg_surface": "#111827",
+      "bg_surface_elevated": "#1F2937",
+      "border": "#374151",
+      "border_subtle": "#1F2937",
+      "primary": "#3B82F6",
+      "primary_hover": "#2563EB",
+      "primary_foreground": "#FFFFFF",
+      "accent_amber": "#F59E0B",
+      "accent_emerald": "#10B981",
+      "accent_cyan": "#06B6D4",
+      "text_primary": "#F9FAFB",
+      "text_secondary": "#9CA3AF",
+      "text_muted": "#6B7280"
+    },
+    "light_mode": {
+      "bg_base": "#F8FAFC",
+      "bg_surface": "#FFFFFF",
+      "bg_surface_elevated": "#F1F5F9",
+      "border": "#E2E8F0",
+      "border_subtle": "#F1F5F9",
+      "primary": "#1E40AF",
+      "primary_hover": "#1E3A8A",
+      "primary_foreground": "#FFFFFF",
+      "accent_amber": "#D97706",
+      "accent_emerald": "#059669",
+      "accent_cyan": "#0891B2",
+      "text_primary": "#0F172A",
+      "text_secondary": "#475569",
+      "text_muted": "#94A3B8"
+    },
+    "status_badges": {
+      "Planejado": {
+        "bg": "bg-slate-500/15 text-slate-300 border-slate-500/30 dark:bg-slate-800 dark:text-slate-300",
+        "label": "Planejado",
+        "icon": "Clock"
+      },
+      "Em andamento": {
+        "bg": "bg-blue-500/15 text-blue-400 border-blue-500/30 dark:bg-blue-950/50 dark:text-blue-300",
+        "label": "Em andamento",
+        "icon": "PlayCircle"
+      },
+      "Em validação": {
+        "bg": "bg-purple-500/15 text-purple-400 border-purple-500/30 dark:bg-purple-950/50 dark:text-purple-300",
+        "label": "Em validação",
+        "icon": "ShieldCheck"
+      },
+      "Com pendências": {
+        "bg": "bg-amber-500/15 text-amber-400 border-amber-500/30 dark:bg-amber-950/50 dark:text-amber-300",
+        "label": "Com pendências",
+        "icon": "AlertTriangle"
+      },
+      "Concluído": {
+        "bg": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 dark:bg-emerald-950/50 dark:text-emerald-300",
+        "label": "Concluído",
+        "icon": "CheckCircle2"
+      },
+      "Cancelado": {
+        "bg": "bg-red-500/15 text-red-400 border-red-500/30 dark:bg-red-950/50 dark:text-red-300",
+        "label": "Cancelado",
+        "icon": "XCircle"
+      }
+    }
+  },
+  "spacing_and_layout": {
+    "sidebar": "w-64 collapsible to w-16 transition-all duration-300 bg-slate-900 border-r border-slate-800 z-40 fixed left-0 top-0 bottom-0",
+    "topbar": "h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30",
+    "content_padding": "p-6 md:p-8 space-y-6 max-w-[1700px] mx-auto",
+    "card_grid": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4",
+    "excel_table_style": "border-collapse border border-slate-800 text-xs font-mono rounded-lg overflow-hidden"
+  },
+  "key_components": {
+    "login_screen": {
+      "path": "/app/frontend/src/pages/Login.js",
+      "style": "Industrial splitscreen or dark backdrop with high-tech grid texture, company logo switcher, username + password input ONLY (no email requirement), multi-company selector"
+    },
+    "sidebar_navigation": {
+      "path": "/app/frontend/src/components/layout/Sidebar.js",
+      "features": ["Collapsible toggle", "Company switcher with active dynamic logo", "Module -> Submodule tree structure", "User badge with role permission level"]
+    },
+    "excel_like_table": {
+      "path": "/app/frontend/src/components/inventory/ExcelTable.js",
+      "features": ["Inline cell editing", "Column sorting", "Header filter popovers", "Column visibility toggle", "Export to CSV/Excel button", "Data pagination & Virtual scroll"]
+    },
+    "kanban_view": {
+      "path": "/app/frontend/src/components/inventory/InventoryKanban.js",
+      "features": ["Columns by Status (Planejado, Em andamento, Em validação, Com pendências, Concluído, Cancelado)", "Drag & Drop or direct status switcher", "Compact KPI cards", "Filter by trigger/group"]
+    },
+    "import_excel_wizard": {
+      "path": "/app/frontend/src/components/inventory/ImportWizard.js",
+      "features": ["Dual upload mode: Ponto de Corte + Coleta Física", "Data validation preview with line-by-line error highlighting", "Validation engine result summary", "Commit button with undo option"]
+    },
+    "pdf_report_generator": {
+      "path": "/app/frontend/src/components/reports/PDFReportModal.js",
+      "features": ["Consolidated Dados Gerais report layout", "Acurácia de Inventário (% SKU, % Financeira)", "Divergências table", "Company header & digital signature block"]
+    }
+  },
+  "image_urls": {
+    "warehouse_hero_bg": "https://images.unsplash.com/photo-1553413077-190dd305871c?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "factory_automation": "https://images.unsplash.com/photo-1717386255773-1e3037c81788?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "inventory_boxes": "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "robotic_line": "https://images.unsplash.com/photo-1647427060118-4911c9821b82?crop=entropy&cs=srgb&fm=jpg&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Ensure language is strict Portuguese (pt-BR) throughout all screens, labels, status badges, buttons, tooltips, and toast messages.",
+    "Implement full mock/REST backend interactions for login (username/password), multi-company switching, permissions matrix, and inventory operations.",
+    "Ensure every interactive element and key metric display includes a descriptive kebab-case data-testid attribute (e.g., data-testid='inventory-status-badge', data-testid='excel-export-button').",
+    "Implement Excel import with live drag & drop file upload, tabular preview, validation error highlights, and validation engine metrics calculation.",
+    "Ensure the status badges strictly match the 6 specified states: Planejado, Em andamento, Em validação, Com pendências, Concluído, Cancelado.",
+    "Provide responsive views for desktop (primary) and tablet industrial screens.",
+    "Use Recharts for interactive bar, pie, and divergence trend charts in the Inventário Dashboard.",
+    "Provide PDF report generation preview and download simulator with clean printable layout."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "anti_slop_rule": "Avoid generic centered white cards with default shadows. Use dense industrial headers, high-contrast monospace table cells, sharp 1px borders, subtle slate glowing active states, and crisp typography.",
+    "testing_rule": "All buttons, inputs, links, tabs, tables, tooltips, modals, and KPI cards MUST have data-testid attributes.",
+    "accessibility": "Ensure text contrast passes WCAG AA and hover states explicitly update text color alongside background changes.",
+    "toast_notifications": "Use sonner for user alerts (e.g., 'Empresa cadastrada com sucesso', 'Relatório PDF gerado', 'Inventário atualizado')."
+  }
+}
