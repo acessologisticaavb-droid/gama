@@ -47,7 +47,6 @@ export default function Login() {
           </div>
         </div>
         <div className="relative space-y-4">
-          <h1 className="font-heading text-4xl font-bold leading-tight">Controle, rastreabilidade e acuracidade de inventário.</h1>
           <p className="text-muted-foreground max-w-md">Plataforma corporativa multiempresa, modular e segura para gestão industrial de ponta a ponta.</p>
           <div className="flex gap-6 pt-4 text-xs uppercase tracking-wider text-muted-foreground font-mono">
             <span>Multiempresa</span><span>Auditoria</span><span>Modular</span>
