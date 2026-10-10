@@ -1,0 +1,42 @@
+{
+  "summary": "First iteration end-to-end test of GAMA. Executed 27 pytest cases covering auth (admin + alan_teixeira), company CRUD + delete-with-confirmation cascade, company-admin creation + key validation (right/wrong), user auto-login generation + permissions, multi-tenant isolation (403 cross-company), cadastros (products/addresses/inv-groups/triggers with motivo validation), full inventory lifecycle (create -> import cutoff -> import physical -> validation engine), dashboard KPIs, pendencia tabs, resumo material, record update w/ persistence, Excel export (xlsx magic bytes), PDF report (%PDF magic bytes), audit, and brute-force lockout. 26/27 passed. Frontend smoke test: login, Empresas listing, and the delete-company confirmation modal (data-testid delete-confirm-name-input / delete-confirm-btn) all work and the confirm button is correctly disabled until the exact company name is typed.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/auth/login", "issue": "Brute-force lockout does NOT trigger in production/preview env. The login_attempts counter is keyed on `request.client.host:username`, but behind the Kubernetes ingress the client IP alternates between multiple pod IPs (observed 10.39.132.203 and 10.64.131.71 for the same session). Each IP therefore owns an independent counter that never reaches MAX_ATTEMPTS=5. 8 consecutive wrong-password POSTs for the same username returned 8x 401 instead of 429 after the 5th. Fix: key the counter on `username` only (or on X-Forwarded-For / first forwarded IP), not on request.client.host.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Post-login landing (/)", "issues": ["system_admin lands on a nearly empty welcome page ('Bem-vindo, Administrador do Sistema' with no KPIs, no quick links). Would benefit from showing counts of empresas/usuários/pendencias ou shortcut to 'Empresas'."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix brute-force lockout counter so it works behind multi-pod ingress (key by username only or trust X-Forwarded-For). Currently the feature is effectively disabled in the deployed preview env.",
+    "(Optional UX) Populate the system_admin landing page with aggregated widgets instead of leaving it blank."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1060 lines — consider splitting into routers (auth, companies, users, cadastros, inventory, reports) for maintainability (>700 line guideline).",
+    "set_auth_cookies hardcodes secure=True, samesite='none'. Fine for the HTTPS preview but will not work on plain http:// local dev — consider making it env-driven.",
+    "Brute-force identifier uses request.client.host which is unreliable behind reverse proxies/ingress (actual bug above).",
+    "delete_company audit entry stores company_id of the deleted company, but immediately after `db.companies.delete_one` the record is gone; audit survives, which is fine, just document that intentionally.",
+    "In global_pendencias the `data_inv` isoformat parsing uses `fromisoformat` on strings that could be e.g. '2026-01-15'; works but mixing with aware datetime for data_resolucao makes dias calculation fragile — covered by try/except, acceptable.",
+    "/api/auth/login response does not set cookie attributes include Domain, which is fine for same-origin preview but worth noting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added TestAlanSeed, TestDeleteCompany, TestBruteForce)"
+  ],
+  "success_rate": {"backend": "96% (26/27)", "frontend": "100% of smoke-tested flows"},
+  "test_credentials": "system_admin: admin/admin123 and alan_teixeira/ifma2013 (both verified working).",
+  "seed_data_creation": "Each test run creates isolated TEST_Empresa_<RUNID> + TEST_DelEmp_<RUNID> companies and users; delete-company test cleans up its own fixture, the other companies persist (will accumulate across runs).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/backend_test.py and are parallel-safe (TEST_RUN_ID guarantees unique CNPJs/usernames). Run: `cd /app && python -m pytest backend/tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml`. The only failing case is TestBruteForce::test_lockout_after_5_fails — root cause is the multi-pod ingress IP rotation documented above; after main agent fixes the identifier logic, re-run that single test to confirm 429 appears on the 6th attempt. Frontend data-testids used in /app/frontend/src/pages/admin/Companies.jsx (delete-company-<id>, delete-confirm-name-input, delete-confirm-btn) are all present and correctly wired.",
+  "rca of the issue": "Brute-force: `ident = f\"{ip}:{username}\"` where `ip = request.client.host`. In the Kubernetes preview environment the FastAPI service is reached via a reverse proxy that opens connections from multiple pod IPs (observed values 10.39.132.203 and 10.64.131.71). Each failed login lands on whichever pod handled the request, so a single attacker hammering one username keeps two independent counters, each capped at 4. The lockout check `attempt.count >= MAX_ATTEMPTS` is never satisfied. Reproduction: curl /api/auth/login 8x with wrong password → all 401, DB shows two login_attempts docs with count=4 each. Mitigation: either (a) drop IP from identifier (`ident = username.lower()`), accepting that a single attacker from any origin triggers lockout, or (b) use the real client IP from `request.headers.get('x-forwarded-for', '').split(',')[0].strip() or request.client.host`."
+}

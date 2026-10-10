@@ -189,8 +189,7 @@ def set_auth_cookies(response: Response, user_id: str, username: str):
 @api.post("/auth/login")
 async def login(body: LoginInput, request: Request, response: Response):
     username = body.username.strip().lower()
-    ip = request.client.host if request.client else "x"
-    ident = f"{ip}:{username}"
+    ident = username
     attempt = await db.login_attempts.find_one({"identifier": ident})
     if attempt and attempt.get("count", 0) >= MAX_ATTEMPTS:
         locked = attempt.get("locked_until")

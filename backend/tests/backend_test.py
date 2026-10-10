@@ -312,3 +312,64 @@ class TestAudit:
         assert len(rows) >= 1
         actions = {a.get("action") for a in rows}
         assert any("Criação" in a or "Login" in a or "Importação" in a for a in actions)
+
+
+
+# ============ Alan admin seed ============
+class TestAlanSeed:
+    def test_alan_login(self):
+        s = requests.Session()
+        r = _login(s, "alan_teixeira", "ifma2013")
+        assert r.status_code == 200, r.text
+        assert r.json()["role"] == "system_admin"
+
+
+# ============ Delete Company (cascade) ============
+class TestDeleteCompany:
+    def test_delete_company_flow(self, admin_session):
+        run = uuid.uuid4().hex[:6].upper()
+        nome = f"TEST_DelEmp_{run}"
+        cnpj = f"22.222.222/{run[:4]}-{run[4:6]}"
+        r = admin_session.post(f"{API}/companies", json={
+            "nome": nome, "nome_fantasia": "Del", "cnpj": cnpj, "ramo": "x"})
+        assert r.status_code == 200, r.text
+        cid = r.json()["id"]
+        key = r.json()["key"]
+        # create admin
+        login = f"deladm_{run.lower()}"
+        r = admin_session.post(f"{API}/companies/{cid}/admin", json={
+            "nome": "Del Adm", "funcao": "g", "login": login, "senha": "Senha@123"})
+        assert r.status_code == 200
+        # company admin session should NOT be able to delete
+        s_other = requests.Session()
+        assert _login(s_other, login, "Senha@123").status_code == 200
+        assert s_other.post(f"{API}/auth/validate-key", json={"key": key}).status_code == 200
+        r = s_other.delete(f"{API}/companies/{cid}?confirm={nome}")
+        assert r.status_code == 403
+
+        # wrong confirm fails
+        r = admin_session.delete(f"{API}/companies/{cid}?confirm=NOME_ERRADO")
+        assert r.status_code == 400
+
+        # correct deletes
+        r = admin_session.delete(f"{API}/companies/{cid}?confirm={nome}")
+        assert r.status_code == 200
+        # verify gone
+        r = admin_session.get(f"{API}/companies/{cid}")
+        assert r.status_code == 404
+        # user also gone - login fails
+        s2 = requests.Session()
+        assert _login(s2, login, "Senha@123").status_code == 401
+
+
+# ============ Brute force lockout ============
+class TestBruteForce:
+    def test_lockout_after_5_fails(self):
+        s = requests.Session()
+        uname = f"nouser_{uuid.uuid4().hex[:6]}"
+        codes = []
+        for _ in range(6):
+            r = _login(s, uname, "wrong")
+            codes.append(r.status_code)
+        # after 5 wrongs, 6th should be 429
+        assert codes[-1] == 429, f"expected final 429 lockout, got {codes}"
