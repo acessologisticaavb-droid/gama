@@ -333,6 +333,32 @@ async def create_company_admin(cid: str, body: CompanyAdminCreate, user: dict = 
     return {"id": str(res.inserted_id), "username": uname}
 
 
+@api.delete("/companies/{cid}")
+async def delete_company(cid: str, confirm: str = Query(""), user: dict = Depends(require_system_admin)):
+    c = await db.companies.find_one({"_id": oid(cid)})
+    if not c:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    if confirm.strip() != c["nome"].strip():
+        raise HTTPException(status_code=400, detail="Confirmação inválida: digite o nome exato da empresa.")
+    # Cascade: remove all data owned exclusively by this company
+    inv_ids = [str(i["_id"]) async for i in db.inventories.find({"company_id": cid}, {"_id": 1})]
+    for coll in (db.inv_cutoff_rows, db.inv_physical_rows, db.inv_records):
+        await coll.delete_many({"company_id": cid})
+    if inv_ids:
+        for coll in (db.inv_cutoff_rows, db.inv_physical_rows, db.inv_records):
+            await coll.delete_many({"inventory_id": {"$in": inv_ids}})
+    await db.inventories.delete_many({"company_id": cid})
+    await db.products.delete_many({"company_id": cid})
+    await db.addresses.delete_many({"company_id": cid})
+    await db.inv_groups.delete_many({"company_id": cid})
+    await db.triggers.delete_many({"company_id": cid})
+    await db.counters.delete_many({"company_id": cid})
+    await db.users.delete_many({"company_id": cid})
+    await db.companies.delete_one({"_id": oid(cid)})
+    await audit(cid, user, "Exclusão de empresa", "empresas", c["nome"], c.get("cnpj"), "excluída (cascata)")
+    return {"ok": True, "message": "Empresa excluída com sucesso."}
+
+
 # ======================= Users (company admin) =======================
 def require_company_admin(user: dict = Depends(require_validated)):
     if user.get("role") not in ("company_admin",):

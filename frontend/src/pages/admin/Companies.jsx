@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Building2, Plus, KeyRound, Eye, EyeOff, Users, Loader2, Copy } from "lucide-react";
+import { Building2, Plus, KeyRound, Eye, EyeOff, Users, Loader2, Copy, Trash2, AlertTriangle } from "lucide-react";
 
 export default function Companies() {
   const nav = useNavigate();
@@ -18,6 +18,9 @@ export default function Companies() {
   const [saving, setSaving] = useState(false);
   const [reveal, setReveal] = useState({});
   const [created, setCreated] = useState(null);
+  const [toDelete, setToDelete] = useState(null);
+  const [confirmName, setConfirmName] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     try { const { data } = await api.get("/companies"); setList(data); }
@@ -44,6 +47,17 @@ export default function Companies() {
   };
 
   const copyKey = (k) => { navigator.clipboard?.writeText(k); toast.success("Chave copiada"); };
+
+  const doDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      const { data } = await api.delete(`/companies/${toDelete.id}?confirm=${encodeURIComponent(confirmName)}`);
+      toast.success(data.message || "Empresa excluída com sucesso.");
+      setToDelete(null); setConfirmName(""); load();
+    } catch (e) { toast.error(apiError(e.response?.data?.detail)); }
+    finally { setDeleting(false); }
+  };
 
   return (
     <div className="space-y-6">
@@ -74,7 +88,10 @@ export default function Companies() {
                   <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {c.users} usuários</span>
                   <span>{c.admins} admin(s)</span>
                 </div>
-                <Button variant="outline" className="w-full" onClick={() => nav(`/empresas/${c.id}`)} data-testid={`manage-company-${c.id}`}>Gerenciar</Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => nav(`/empresas/${c.id}`)} data-testid={`manage-company-${c.id}`}>Gerenciar</Button>
+                  <Button variant="outline" size="icon" className="text-destructive hover:bg-destructive/10 border-destructive/30" onClick={() => { setToDelete(c); setConfirmName(""); }} data-testid={`delete-company-${c.id}`} title="Excluir empresa"><Trash2 className="h-4 w-4" /></Button>
+                </div>
               </div>
             ))}
           </div>
@@ -115,6 +132,28 @@ export default function Companies() {
             <Button className="w-full" onClick={() => { const id = created.id; setCreated(null); nav(`/empresas/${id}`); }} data-testid="goto-create-admin">
               Criar Administrador da Empresa
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!toDelete} onOpenChange={(o) => { if (!o) { setToDelete(null); setConfirmName(""); } }}>
+        <DialogContent data-testid="delete-company-dialog">
+          <DialogHeader><DialogTitle className="flex items-center gap-2 text-destructive"><AlertTriangle className="h-5 w-5" /> Excluir empresa?</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Esta ação excluirá a empresa <span className="font-semibold text-foreground">{toDelete?.nome}</span> e todos os dados vinculados a ela, incluindo usuários, inventários, produtos, pendências, importações, registros e demais informações relacionadas.
+            </p>
+            <p className="text-sm font-medium text-destructive">Essa ação não poderá ser desfeita.</p>
+            <div className="space-y-1.5">
+              <Label>Para confirmar, digite o nome da empresa: <span className="font-mono text-foreground">{toDelete?.nome}</span></Label>
+              <Input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder="Nome exato da empresa" data-testid="delete-confirm-name-input" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { setToDelete(null); setConfirmName(""); }} data-testid="delete-cancel-btn">Cancelar</Button>
+              <Button variant="destructive" onClick={doDelete} disabled={deleting || confirmName.trim() !== (toDelete?.nome || "").trim()} data-testid="delete-confirm-btn">
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Excluir empresa"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
