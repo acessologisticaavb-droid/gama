@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration-2 regression + new-feature pass. Extended backend_test.py from 27 to 41 pytest cases covering ALL new §-items (3,4,7,22,10,16-20,1,2,14): cutoff validacao_sku, physical enrichment (incl. 'SKU fora do sistema'), pendencia-tabs base+gatilhos, PUT /records moves rows between base→gatilho, DELETE /inventories/{id} with permission (403 for user, cascade for admin), created_by on inventory, PUT /users/{uid} (incl. cross-company 404), PUT /auth/profile foto, global /pendencias search + /classificacoes + gatilho filter, Excel export with 'Concluído Por' column, plus full regression of iteration-1 suite. 41/41 passed when run serially (-n 0). Note: when run with the project default -n 2 --dist loadscope, 6 tests that depend on fixtures mutated by TestInventory failed because they land on a different xdist worker. Frontend Playwright smoke test as company_admin covered: dashboard module-card-inventario → access-module-inventario → inventory list → inv-card-<id> → delete dialog (open+cancel) → inv detail with KPIs/donut → Pendencias (pend-search, pend-classif-filter visible, status select, 0 search hits for 'SKU' — see note) → topbar-profile-btn → profile-upload-btn → Users create → edit-user dialog (nome/funcao/senha/active/foto) → edit-user-save. All target data-testids present and wired.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/pendencias?search=…", "issue": "Search haystack includes item['status'] (= resolucao_status, e.g. 'Pendente') but NOT item['status_inventario'] (e.g. 'SKU FALTANTE'). Users searching 'SKU FALTANTE' or 'faltante' get 0 hits. Per spec §19 search must cover 'status'. Low risk — PT 'status' is ambiguous — but recommend including status_inventario in the search blob."},
+      {"endpoint": "backend/pytest.ini", "issue": "Default addopts '-n 2 --dist loadscope' puts classes on independent xdist workers that each build their own module-scoped company_ctx/admin_session; new feature tests that need company_ctx['iid'] created by TestInventory then fail with KeyError. Serial run (-n 0) is clean. Options: (a) move inventory bootstrap into a session-scoped fixture, (b) pin new classes to the same scope as TestInventory, or (c) convert ctx mutations into independent fixtures. Not a product bug but blocks the configured parallel run."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "All modals (Radix DialogContent)", "issues": ["Repeated a11y console warning: 'Missing Description or aria-describedby={undefined} for {DialogContent}'. Add <DialogDescription> or aria-describedby to each DialogContent (user/edit-user/perms/created/delete/inventory dialogs)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Expand /api/pendencias search haystack to include status_inventario (so 'SKU FALTANTE' / 'FORA' queries match).",
+    "Adjust pytest-xdist strategy or share bootstrap fixtures so the suite runs green with the project default `-n 2 --dist loadscope` (currently only green with `-n 0`).",
+    "Add DialogDescription / aria-describedby to every DialogContent to silence a11y warnings.",
+    "(Carry-over from iter-1, still open) Brute-force lockout keyed on request.client.host unreliable behind multi-pod ingress — key on username (or X-Forwarded-For) only. The isolated test passed this run because both failed attempts happened to land on the same pod, but it is still flaky."
+  ],
+  "critical_code_review_comments": [
+    "server.py now 1158 lines — still above the 700-line split guideline; please extract routers (auth, companies, users, cadastros, inventory, reports, pendencias).",
+    "_process_validation uses raw str(c.get('peso',0)) in physical enrichment but defaults peso to the literal string 'SKU fora do sistema' for fora rows — downstream numeric consumers (resumo material, charts) must handle a str-or-number field. Consider storing peso=0 + a flag instead.",
+    "update_record sets concluido_por to user.get('nome') (display name). If two users share a name within a company (allowed, no unique constraint), auditability suffers — consider also storing concluido_por_username.",
+    "global_pendencias loads up to 5000 records then filters in-process; for large tenants push 'search' into a Mongo text/regex query to avoid O(n) scans per request.",
+    "DELETE /companies/{cid} runs 4 collection-level delete_many({'company_id': cid}) then another identical block for inv_ids — redundant (safe but noisy); remove the duplicated loop.",
+    "frontend DialogContent lacks DialogDescription (accessibility)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added TestInventoryCreatedBy, TestCutoffValidacaoSku, TestPhysicalEnrichment, TestPendenciaTabsBaseAndGatilhos, TestDeleteInventory, TestEditUser, TestProfilePhoto, TestPendenciasSearchAndClassificacoes, TestExcelConcluidoPor — +14 cases)"
+  ],
+  "success_rate": {"backend": "100% (41/41) serial; 85% (35/41) under default -n2 loadscope (fixture-sharing issue, not product)", "frontend": "100% of smoke-tested flows (dashboard module-card, inv-card, inv-delete dialog, pendencias filters, profile upload, user edit)"},
+  "test_credentials": "system_admin: admin/admin123 and alan_teixeira/ifma2013 (verified). Each run creates a disposable company_admin testadm_<RUNID>/Senha@123 and user joao_silva_* (and a UI_TEST_* company — see context).",
+  "seed_data_creation": "Suite creates TEST_Empresa_<RUNID>, TEST_Empresa2_<RUNID>, TEST_EmpEdit_<RUNID>, TEST_DelEmp_<RUNID>. UI smoke run also created UI_TEST_D950F1 with uiadm_d950f1/Senha@123, key UI_-SYK8RN, and one inventory 6acbf71f049e83414a70bad2 (left in place for main-agent manual verification).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend tests with `cd /app && python -m pytest backend/tests/backend_test.py -v -n 0 --junitxml=/app/test_reports/pytest/pytest_results.xml` (serial) — the project pytest.ini default of `-n 2 --dist loadscope` produces 6 false-negatives because new feature classes share the module-scoped company_ctx fixture populated by TestInventory. If/when main agent restructures fixtures, revert to the default. UI_TEST_D950F1 / uiadm_d950f1 / Senha@123 / key UI_-SYK8RN / inv 6acbf71f049e83414a70bad2 is available for ad-hoc UI testing.",
+  "rca of the issue": "Pendencias search miss: global_pendencias builds the search haystack from codigo/cod_material/descricao/sku/lote/gatilho/resolucao/concluido_por/resolucao_status but omits status_inventario. A user searching 'faltante' or 'SKU FALTANTE' in Pendências gets 0 results even when matching records exist. Fix: include r.get('status_inventario') in the ' '.join(...) line (server.py ~1059)."
+}

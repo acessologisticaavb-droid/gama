@@ -373,3 +373,238 @@ class TestBruteForce:
             codes.append(r.status_code)
         # after 5 wrongs, 6th should be 429
         assert codes[-1] == 429, f"expected final 429 lockout, got {codes}"
+
+
+# =============================================================================
+# ====================== NEW FEATURES — ITERATION 2 ===========================
+# =============================================================================
+
+# ============ created_by on inventories (§10) ============
+class TestInventoryCreatedBy:
+    def test_created_by_recorded(self, company_session, company_ctx):
+        # fixture already created company_ctx['iid'] via admin_login
+        r = company_session.get(f"{API}/inventories/{company_ctx['iid']}")
+        assert r.status_code == 200
+        inv = r.json()
+        assert inv.get("created_by") == company_ctx["admin_login"], \
+            f"expected created_by={company_ctx['admin_login']} got {inv.get('created_by')}"
+
+        r = company_session.get(f"{API}/inventories")
+        assert r.status_code == 200
+        matches = [i for i in r.json() if i["id"] == company_ctx["iid"]]
+        assert matches and matches[0].get("created_by") == company_ctx["admin_login"]
+
+
+# ============ Ponto de Corte — validacao_sku (§3) ============
+class TestCutoffValidacaoSku:
+    def test_cutoff_rows_have_validacao_sku(self, company_session, company_ctx):
+        r = company_session.get(f"{API}/inventories/{company_ctx['iid']}/cutoff?limit=200")
+        assert r.status_code == 200
+        rows = r.json()["rows"]
+        assert rows, "cutoff should have rows"
+        for row in rows:
+            assert "validacao_sku" in row, f"missing validacao_sku: {row}"
+            assert row["validacao_sku"] in ("SKU encontrado Fisico", "SKU faltante"), \
+                f"invalid value: {row['validacao_sku']}"
+        # at least one of each expected (per prompt sample has faltante)
+        vals = {r["validacao_sku"] for r in rows}
+        assert "SKU encontrado Fisico" in vals
+        assert "SKU faltante" in vals
+
+
+# ============ Coleta Física — enrichment (§4) ============
+class TestPhysicalEnrichment:
+    def test_physical_rows_enriched(self, company_session, company_ctx):
+        r = company_session.get(f"{API}/inventories/{company_ctx['iid']}/physical?limit=200")
+        assert r.status_code == 200
+        rows = r.json()["rows"]
+        assert rows
+        required = ["cod_material", "descricao", "lote", "pos_sistema", "dias_estoque", "peso"]
+        for row in rows:
+            for k in required:
+                assert k in row, f"physical row missing enriched field {k}: {row}"
+                assert row[k] not in (None, ""), f"physical row field {k} is empty"
+        # expect at least one 'SKU fora do sistema' marker since sample has fora
+        fora_rows = [r for r in rows if r["cod_material"] == "SKU fora do sistema"]
+        assert fora_rows, "expected at least one physical row marked 'SKU fora do sistema'"
+
+
+# ============ Pendencia tabs base + gatilhos (§7) ============
+class TestPendenciaTabsBaseAndGatilhos:
+    def test_base_and_gatilhos_shape(self, company_session, company_ctx):
+        r = company_session.get(f"{API}/inventories/{company_ctx['iid']}/pendencia-tabs")
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, dict)
+        assert "base" in data and "gatilhos" in data
+        assert isinstance(data["base"], dict)
+        assert isinstance(data["gatilhos"], dict)
+        # base should contain at least SKU FALTANTE (sample)
+        assert "SKU FALTANTE" in data["base"] or "SKU FORA DO SISTEMA" in data["base"]
+        company_ctx["_base_before"] = dict(data["base"])
+
+    def test_moving_record_to_gatilho_creates_tab(self, company_session, company_ctx):
+        # fetch a SKU FALTANTE record without gatilho
+        r = company_session.get(f"{API}/inventories/{company_ctx['iid']}/records?status=SKU FALTANTE")
+        assert r.status_code == 200
+        rows = r.json()["rows"]
+        # existing TestInventory already attached a gatilho to the first faltante; pick an untouched one
+        untouched = [x for x in rows if not x.get("gatilho")]
+        if not untouched:
+            # all were marked, re-import physical would reset — skip
+            pytest.skip("no untouched faltante record available in this run")
+        rid = untouched[0]["rid"]
+        gname = "Lançamento esquecido"
+        r = company_session.put(f"{API}/records/{rid}", json={"gatilho": gname})
+        assert r.status_code == 200
+
+        # record should no longer appear in base status filter
+        r = company_session.get(f"{API}/inventories/{company_ctx['iid']}/records?status=SKU FALTANTE")
+        rids_in_base = {x["rid"] for x in r.json()["rows"]}
+        assert rid not in rids_in_base
+
+        # but should appear in gatilho filter
+        r = company_session.get(
+            f"{API}/inventories/{company_ctx['iid']}/records?gatilho={gname}")
+        assert r.status_code == 200
+        rids_in_gat = {x["rid"] for x in r.json()["rows"]}
+        assert rid in rids_in_gat
+
+        # pendencia-tabs should expose it under gatilhos
+        r = company_session.get(f"{API}/inventories/{company_ctx['iid']}/pendencia-tabs")
+        tabs = r.json()
+        assert gname in tabs["gatilhos"], f"expected gatilho tab '{gname}' in {tabs}"
+
+
+# ============ Delete Inventory with permissions (§22) ============
+class TestDeleteInventory:
+    def test_user_without_perm_cannot_delete(self, company_ctx):
+        # login as common user (created in TestUsersAndPerms); may need pwd change
+        if "user_login" not in company_ctx:
+            pytest.skip("user not created yet")
+        s = requests.Session()
+        r = _login(s, company_ctx["user_login"], company_ctx["user_pwd"])
+        assert r.status_code == 200
+        # force password change if required
+        if r.json().get("must_change_password"):
+            r = s.post(f"{API}/auth/change-password", json={"new_password": "NovaSenha@1"})
+            assert r.status_code == 200
+            company_ctx["user_pwd"] = "NovaSenha@1"
+        # validate key
+        key_resp = s.post(f"{API}/auth/validate-key",
+                          json={"key": _fetch_key_as_admin(company_ctx)})
+        assert key_resp.status_code == 200
+        # try delete — user has only ver/criar/editar on cadastros, no excluir on lancamentos
+        r = s.delete(f"{API}/inventories/{company_ctx['iid']}")
+        assert r.status_code == 403, f"expected 403 got {r.status_code} {r.text[:200]}"
+
+    def test_admin_can_delete_cascade(self, admin_session, company_session, company_ctx):
+        # create a throw-away inventory as company_admin, then delete it
+        r = company_session.post(f"{API}/inventories", json={
+            "tipo": "Mensal", "grupo_produtos": "Metais", "data": "2026-01-20"})
+        assert r.status_code == 200
+        iid = r.json()["id"]
+        r = company_session.delete(f"{API}/inventories/{iid}")
+        assert r.status_code == 200
+        # verify gone
+        r = company_session.get(f"{API}/inventories/{iid}")
+        assert r.status_code == 404
+
+
+def _fetch_key_as_admin(company_ctx):
+    """Helper: fetch the company key again (we have it in ctx)."""
+    return company_ctx["key"]
+
+
+# ============ PUT /users/{uid} (edit user by admin da empresa) (§1) ============
+class TestEditUser:
+    def test_admin_edits_user(self, company_session, company_ctx):
+        uid = company_ctx["user_id"]
+        r = company_session.put(f"{API}/users/{uid}", json={
+            "nome": "João da Silva Editado", "funcao": "Supervisor", "active": True,
+            "foto": "data:image/png;base64,AAA"})
+        assert r.status_code == 200
+
+        r = company_session.get(f"{API}/users")
+        rec = next(u for u in r.json() if u["id"] == uid)
+        assert rec["nome"] == "João da Silva Editado"
+        assert rec["funcao"] == "Supervisor"
+        assert rec["foto"] == "data:image/png;base64,AAA"
+        assert rec["active"] is True
+
+    def test_cross_company_edit_blocked(self, admin_session, company_ctx):
+        # create 2nd company + admin and try to edit user from company 1
+        run = uuid.uuid4().hex[:6].upper()
+        r = admin_session.post(f"{API}/companies", json={
+            "nome": f"TEST_EmpEdit_{run}", "nome_fantasia": "x",
+            "cnpj": f"33.333.333/{run[:4]}-{run[4:6]}", "ramo": "x"})
+        assert r.status_code == 200
+        cid2 = r.json()["id"]
+        key2 = r.json()["key"]
+        login = f"editadm_{run.lower()}"
+        r = admin_session.post(f"{API}/companies/{cid2}/admin", json={
+            "nome": "E", "funcao": "g", "login": login, "senha": "Senha@123"})
+        assert r.status_code == 200
+        s = requests.Session()
+        assert _login(s, login, "Senha@123").status_code == 200
+        assert s.post(f"{API}/auth/validate-key", json={"key": key2}).status_code == 200
+        # cross company edit — should 404 (not found in own scope)
+        r = s.put(f"{API}/users/{company_ctx['user_id']}", json={"nome": "hack"})
+        assert r.status_code in (403, 404), f"expected 403/404 got {r.status_code}"
+
+
+# ============ PUT /auth/profile — foto only (§2) ============
+class TestProfilePhoto:
+    def test_user_updates_own_photo(self, company_session):
+        r = company_session.put(f"{API}/auth/profile",
+                                json={"foto": "data:image/png;base64,ZZZ"})
+        assert r.status_code == 200
+        assert r.json().get("foto") == "data:image/png;base64,ZZZ"
+        r = company_session.get(f"{API}/auth/me")
+        assert r.json().get("foto") == "data:image/png;base64,ZZZ"
+
+
+# ============ Global pendencias — search & classificacoes (§19,20) ============
+class TestPendenciasSearchAndClassificacoes:
+    def test_search_filters(self, company_session):
+        # existing suite marked a record as Concluído by 'Admin Teste'
+        r = company_session.get(f"{API}/pendencias?search=Admin Teste")
+        assert r.status_code == 200
+        rows = r.json()
+        assert rows, "expected at least one pendencia matching concluido_por 'Admin Teste'"
+        for row in rows:
+            assert "concluido_por" in row and "data_resolucao" in row
+
+    def test_classificacoes_lists_gatilhos(self, company_session):
+        r = company_session.get(f"{API}/classificacoes")
+        assert r.status_code == 200
+        vals = r.json()
+        assert isinstance(vals, list)
+        assert "Lançamento esquecido" in vals
+
+    def test_gatilho_filter(self, company_session):
+        r = company_session.get(f"{API}/pendencias?gatilho=Lançamento esquecido")
+        assert r.status_code == 200
+        rows = r.json()
+        assert rows
+        assert all(x["gatilho"] == "Lançamento esquecido" for x in rows)
+
+
+# ============ Export Excel contains 'Concluído Por' column (§14) ============
+class TestExcelConcluidoPor:
+    def test_excel_has_concluido_por_column(self, company_session, company_ctx):
+        import openpyxl
+        r = company_session.get(f"{API}/inventories/{company_ctx['iid']}/export-excel")
+        assert r.status_code == 200
+        wb = openpyxl.load_workbook(io.BytesIO(r.content), read_only=True, data_only=True)
+        found = False
+        for sh in wb.sheetnames:
+            ws = wb[sh]
+            for row in ws.iter_rows(max_row=30, values_only=True):
+                cells = [str(c or "").strip().lower() for c in row]
+                if "concluído por" in cells or "concluido por" in cells:
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "expected a sheet with 'Concluído Por' column in export"

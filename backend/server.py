@@ -1057,7 +1057,7 @@ async def global_pendencias(user: dict = Depends(require_validated), status_reso
         if s:
             hay = " ".join(str(v or "") for v in [item["codigo"], item["cod_material"], item["descricao"],
                            item["sku"], item["lote"], item["gatilho"], item["resolucao"],
-                           item["concluido_por"], item["status"]]).lower()
+                           item["concluido_por"], item["status"], item["status_inventario"]]).lower()
             if s not in hay:
                 continue
         out.append(item)
