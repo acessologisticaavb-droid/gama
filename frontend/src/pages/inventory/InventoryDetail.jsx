@@ -80,8 +80,11 @@ export default function InventoryDetail() {
           <TabsTrigger value="cutoff" data-testid="tab-cutoff">Ponto de Corte</TabsTrigger>
           <TabsTrigger value="fisica" data-testid="tab-fisica">Coleta Física</TabsTrigger>
           <TabsTrigger value="dados" data-testid="tab-dados">Dados Gerais</TabsTrigger>
-          {Object.entries(tabsData).map(([st, c]) => (
+          {Object.entries(tabsData.base || {}).map(([st, c]) => (
             <TabsTrigger key={st} value={st} data-testid={`tab-${st}`}>{st} <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-1.5 text-[10px]">{c}</span></TabsTrigger>
+          ))}
+          {Object.entries(tabsData.gatilhos || {}).map(([g, c]) => (
+            <TabsTrigger key={`g:${g}`} value={`g:${g}`} data-testid={`tab-gatilho-${g}`}>{g} <span className="ml-1.5 rounded-full bg-emerald-500/20 text-emerald-400 px-1.5 text-[10px]">{c}</span></TabsTrigger>
           ))}
         </TabsList>
 
@@ -89,8 +92,11 @@ export default function InventoryDetail() {
         <TabsContent value="cutoff" className="mt-4"><CutoffTab iid={iid} hasData={inv.has_cutoff} /></TabsContent>
         <TabsContent value="fisica" className="mt-4"><PhysicalTab iid={iid} hasData={inv.has_physical} /></TabsContent>
         <TabsContent value="dados" className="mt-4"><DadosGerais iid={iid} /></TabsContent>
-        {Object.keys(tabsData).map((st) => (
+        {Object.keys(tabsData.base || {}).map((st) => (
           <TabsContent key={st} value={st} className="mt-4"><PendenciaTab iid={iid} status={st} onChange={afterImport} /></TabsContent>
+        ))}
+        {Object.keys(tabsData.gatilhos || {}).map((g) => (
+          <TabsContent key={`g:${g}`} value={`g:${g}`} className="mt-4"><PendenciaTab iid={iid} gatilho={g} onChange={afterImport} /></TabsContent>
         ))}
       </Tabs>
 
@@ -201,6 +207,7 @@ function CutoffTab({ iid, hasData }) {
     { key: "descricao", label: "Descrição" }, { key: "lote", label: "Lote" }, { key: "um", label: "UM" },
     { key: "peso", label: "Peso" }, { key: "pos_sistema", label: "Posição Sistema" },
     { key: "dias_estoque", label: "Dias Estoque" }, { key: "estoque_disponivel", label: "Estoque Disp." },
+    { key: "validacao_sku", label: "Validação do SKU", render: (v) => v ? <InvBadge value={v} /> : "—" },
   ];
   return (
     <div className="space-y-3">
@@ -213,12 +220,18 @@ function CutoffTab({ iid, hasData }) {
 
 function PhysicalTab({ iid, hasData }) {
   const [data, setData] = useState({ rows: [], total: 0 });
-  useEffect(() => { api.get(`/inventories/${iid}/physical?limit=100`).then((r) => setData(r.data)).catch(() => {}); }, [iid, hasData]);
+  useEffect(() => { api.get(`/inventories/${iid}/physical?limit=200`).then((r) => setData(r.data)).catch(() => {}); }, [iid, hasData]);
   if (!hasData) return <Empty icon={ScanLine} title="Nenhuma Coleta Física importada" hint="Use o botão Coleta SKU Físico." />;
-  const cols = [{ key: "cod_barras", label: "Cód. de Barras" }, { key: "sku_fisico", label: "SKU Físico" }, { key: "pos_fisica", label: "Posição Física" }];
+  const cols = [
+    { key: "cod_barras", label: "Cód. de Barras" }, { key: "sku_fisico", label: "SKU Físico" },
+    { key: "pos_fisica", label: "Posição Física" }, { key: "cod_material", label: "Cód. Material" },
+    { key: "descricao", label: "Descrição" }, { key: "lote", label: "Lote" },
+    { key: "pos_sistema", label: "Posição Sistema" }, { key: "dias_estoque", label: "Dias Estoque" },
+    { key: "peso", label: "Peso" },
+  ];
   return (
     <div className="space-y-3">
-      <span className="text-sm text-muted-foreground">{data.total} registros</span>
+      <span className="text-sm text-muted-foreground">{data.total} registros · use o funil para filtrar por valores únicos</span>
       <ExcelTable columns={cols} rows={data.rows.map((r, i) => ({ rid: r.cod_barras + i, ...r }))} onCellChange={() => {}} testid="physical-table" />
     </div>
   );
@@ -245,18 +258,25 @@ function DadosGerais({ iid }) {
   );
 }
 
-function PendenciaTab({ iid, status, onChange }) {
+function PendenciaTab({ iid, status, gatilho: gatilhoTab, onChange }) {
   const [data, setData] = useState({ rows: [], total: 0 });
   const [triggers, setTriggers] = useState([]);
   const canEdit = true;
+  const isGatilhoTab = !!gatilhoTab;
   const isManual = status === "SKU FALTANTE" || status === "SKU FORA DO SISTEMA";
   const motivo = status === "SKU FALTANTE" ? "SKU faltante" : "SKU fora do sistema";
+  const label = gatilhoTab || status;
 
-  const load = useCallback(() => { api.get(`/inventories/${iid}/records?status=${encodeURIComponent(status)}&limit=300`).then((r) => setData(r.data)).catch(() => {}); }, [iid, status]);
+  const load = useCallback(() => {
+    const qs = isGatilhoTab ? `gatilho=${encodeURIComponent(gatilhoTab)}` : `status=${encodeURIComponent(status)}`;
+    api.get(`/inventories/${iid}/records?${qs}&limit=500`).then((r) => setData(r.data)).catch(() => {});
+  }, [iid, status, gatilhoTab, isGatilhoTab]);
   useEffect(() => {
     load();
-    if (isManual) api.get(`/triggers?motivo=${encodeURIComponent(motivo)}`).then((r) => setTriggers(r.data)).catch(() => {});
-  }, [load, isManual, motivo]);
+    // Both manual base tabs and gatilho tabs offer the trigger dropdown so a record can be re-classified / moved.
+    const m = isGatilhoTab ? "" : motivo;
+    api.get(`/triggers${m ? `?motivo=${encodeURIComponent(m)}` : ""}`).then((r) => setTriggers(r.data)).catch(() => {});
+  }, [load, isGatilhoTab, motivo]);
 
   const onCell = async (rid, key, value) => {
     const body = {};
@@ -265,7 +285,7 @@ function PendenciaTab({ iid, status, onChange }) {
     if (key === "resolucao_status") body.resolucao_status = value;
     try {
       await api.put(`/records/${rid}`, body);
-      toast.success("Registro atualizado");
+      toast.success(key === "gatilho" ? "Gatilho salvo — registro movido para a aba correspondente" : "Registro atualizado");
       load(); onChange?.();
     } catch (e) { toast.error(apiError(e.response?.data?.detail)); }
   };
@@ -275,22 +295,24 @@ function PendenciaTab({ iid, status, onChange }) {
     catch (e) { toast.error(apiError(e.response?.data?.detail)); }
   };
 
+  const gatilhoEditable = isManual || isGatilhoTab;
   const cols = [
     { key: "sku_fisico", label: "SKU Físico" }, { key: "sku_sistema", label: "SKU Sistema" },
     { key: "cod_material", label: "Material" }, { key: "descricao", label: "Descrição" },
     { key: "lote", label: "Lote" }, { key: "peso", label: "Peso" }, { key: "pos_sistema", label: "Pos. Sistema" },
-    ...(isManual ? [{ key: "gatilho", label: "Gatilho", editable: true, type: "select", options: triggers.map((t) => ({ value: t.nome, label: t.nome })) }]
+    ...(gatilhoEditable ? [{ key: "gatilho", label: "Gatilho", editable: true, type: "select", options: triggers.map((t) => ({ value: t.nome, label: t.nome })) }]
       : [{ key: "gatilho", label: "Gatilho" }]),
     { key: "resolucao", label: "Resolução", editable: true, type: "text" },
     { key: "resolucao_status", label: "Status", editable: true, type: "select", options: [{ value: "Pendente", label: "Pendente" }, { value: "Concluído", label: "Concluído" }], render: (v) => <InvBadge value={v} /> },
-    { key: "data_resolucao", label: "Data Resolução", render: (v) => v ? new Date(v).toLocaleDateString("pt-BR") : "—" },
+    { key: "concluido_por", label: "Concluído por" },
+    { key: "data_resolucao", label: "Data Resolução", render: (v) => v ? new Date(v).toLocaleString("pt-BR") : "—" },
   ];
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2"><InvBadge value={status} /><span className="text-sm text-muted-foreground">{data.total} ocorrência(s)</span></div>
-      {isManual && triggers.length === 0 && <p className="text-xs text-amber-400">Cadastre gatilhos com motivo "{motivo}" em Cadastros › Gatilhos para classificar.</p>}
-      <ExcelTable columns={cols} rows={data.rows.map((r) => ({ rid: r.rid, ...r }))} onCellChange={onCell} onDeleteRow={onDelete} canDelete={canEdit} testid={`pend-table-${status}`} />
+      <div className="flex items-center gap-2"><InvBadge value={label} /><span className="text-sm text-muted-foreground">{data.total} ocorrência(s)</span></div>
+      {isManual && triggers.length === 0 && <p className="text-xs text-amber-400">Cadastre gatilhos com motivo "{motivo}" em Cadastros › Gatilhos. Ao selecionar um gatilho e salvar, uma aba com esse gatilho é criada automaticamente.</p>}
+      <ExcelTable columns={cols} rows={data.rows.map((r) => ({ rid: r.rid, ...r }))} onCellChange={onCell} onDeleteRow={onDelete} canDelete={canEdit} testid={`pend-table-${label}`} />
     </div>
   );
 }

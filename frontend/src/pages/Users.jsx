@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Users as UsersIcon, Plus, Shield, Trash2, Loader2, CheckCircle2, Copy, KeyRound } from "lucide-react";
+import { Users as UsersIcon, Plus, Shield, Trash2, Loader2, CheckCircle2, Copy, Pencil, UserCircle } from "lucide-react";
 
 const PERMS = ["visualizar", "criar", "editar", "excluir", "importar", "exportar", "aprovar", "administrar"];
 const SUBS = [
@@ -28,6 +28,8 @@ export default function Users() {
   const [created, setCreated] = useState(null);
   const [permUser, setPermUser] = useState(null);
   const [perms, setPerms] = useState({});
+  const [editUser, setEditUser] = useState(null);
+  const [editForm, setEditForm] = useState({ nome: "", funcao: "", active: true, senha: "", foto: null });
 
   const load = async () => {
     try { const { data } = await api.get("/users"); setList(data); }
@@ -53,6 +55,22 @@ export default function Users() {
   };
 
   const openPerms = (u) => { setPermUser(u); setPerms(u.permissions?.inventario || {}); };
+
+  const openEdit = (u) => { setEditUser(u); setEditForm({ nome: u.nome, funcao: u.funcao || "", active: u.active !== false, senha: "", foto: u.foto || null }); };
+  const onEditPhoto = (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    if (f.size > 2 * 1024 * 1024) { toast.error("Imagem muito grande (máx 2MB)."); return; }
+    const reader = new FileReader(); reader.onload = () => setEditForm((s) => ({ ...s, foto: reader.result })); reader.readAsDataURL(f);
+    e.target.value = "";
+  };
+  const saveEdit = async () => {
+    try {
+      const body = { nome: editForm.nome, funcao: editForm.funcao, active: editForm.active, foto: editForm.foto };
+      if (editForm.senha) body.senha = editForm.senha;
+      await api.put(`/users/${editUser.id}`, body);
+      toast.success("Usuário atualizado"); setEditUser(null); load();
+    } catch (e) { toast.error(apiError(e.response?.data?.detail)); }
+  };
   const togglePerm = (sub, perm) => setPerms((p) => {
     const cur = new Set(p[sub] || []);
     cur.has(perm) ? cur.delete(perm) : cur.add(perm);
@@ -81,18 +99,26 @@ export default function Users() {
               <tbody>
                 {list.map((u) => (
                   <tr key={u.id} className="border-t border-border hover:bg-accent/40" data-testid={`user-row-${u.id}`}>
-                    <td className="px-4 py-3 font-medium">{u.nome}</td>
+                    <td className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-2.5">
+                        {u.foto ? <img src={u.foto} alt="" className="h-7 w-7 rounded-full object-cover border border-border" /> : <UserCircle className="h-7 w-7 text-muted-foreground" />}
+                        {u.nome}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs">{u.username}</td>
                     <td className="px-4 py-3 text-muted-foreground">{u.funcao}</td>
                     <td className="px-4 py-3">{u.role === "company_admin" ? "Admin Empresa" : "Usuário"}</td>
-                    <td className="px-4 py-3">{u.validated ? <span className="text-emerald-400 text-xs flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />Validado</span> : <span className="text-amber-400 text-xs">Pendente</span>}</td>
+                    <td className="px-4 py-3">{u.active === false ? <span className="text-red-400 text-xs">Inativo</span> : u.validated ? <span className="text-emerald-400 text-xs flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />Validado</span> : <span className="text-amber-400 text-xs">Pendente</span>}</td>
                     <td className="px-4 py-3 text-right">
-                      {u.role !== "company_admin" && (
-                        <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="outline" onClick={() => openPerms(u)} data-testid={`perms-btn-${u.id}`}><Shield className="h-3.5 w-3.5 mr-1" />Acessos</Button>
-                          <Button size="sm" variant="ghost" onClick={() => del(u)} data-testid={`delete-user-${u.id}`}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
-                        </div>
-                      )}
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="outline" onClick={() => openEdit(u)} data-testid={`edit-user-${u.id}`}><Pencil className="h-3.5 w-3.5 mr-1" />Editar</Button>
+                        {u.role !== "company_admin" && (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => openPerms(u)} data-testid={`perms-btn-${u.id}`}><Shield className="h-3.5 w-3.5 mr-1" />Acessos</Button>
+                            <Button size="sm" variant="ghost" onClick={() => del(u)} data-testid={`delete-user-${u.id}`}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -122,6 +148,28 @@ export default function Users() {
               <div className="flex items-center justify-between"><span><span className="text-muted-foreground">login:</span> {created?.username}</span><button onClick={() => navigator.clipboard?.writeText(created.username)}><Copy className="h-4 w-4" /></button></div>
               <div className="flex items-center justify-between"><span><span className="text-muted-foreground">senha:</span> {created?.senha_inicial}</span><button onClick={() => navigator.clipboard?.writeText(created.senha_inicial)}><Copy className="h-4 w-4" /></button></div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editUser} onOpenChange={() => setEditUser(null)}>
+        <DialogContent data-testid="edit-user-dialog">
+          <DialogHeader><DialogTitle>Editar Usuário</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-4">
+              {editForm.foto ? <img src={editForm.foto} alt="" className="h-16 w-16 rounded-full object-cover border border-border" /> : <div className="h-16 w-16 rounded-full bg-primary/15 text-primary grid place-items-center"><UserCircle className="h-9 w-9" /></div>}
+              <div className="flex gap-2">
+                <label className="inline-flex items-center gap-1 text-sm cursor-pointer rounded-md border border-border px-3 py-1.5 hover:bg-accent" data-testid="edit-user-photo-label">
+                  Foto<input type="file" accept="image/*" className="hidden" onChange={onEditPhoto} data-testid="edit-user-photo-input" />
+                </label>
+                {editForm.foto && <Button variant="ghost" className="text-destructive" onClick={() => setEditForm((s) => ({ ...s, foto: null }))}>Remover</Button>}
+              </div>
+            </div>
+            <div className="space-y-1.5"><Label>Nome completo</Label><Input value={editForm.nome} onChange={(e) => setEditForm((s) => ({ ...s, nome: e.target.value }))} data-testid="edit-user-nome" /></div>
+            <div className="space-y-1.5"><Label>Função</Label><Input value={editForm.funcao} onChange={(e) => setEditForm((s) => ({ ...s, funcao: e.target.value }))} data-testid="edit-user-funcao" /></div>
+            <div className="space-y-1.5"><Label>Nova senha (opcional)</Label><Input value={editForm.senha} onChange={(e) => setEditForm((s) => ({ ...s, senha: e.target.value }))} placeholder="Deixe vazio para manter" data-testid="edit-user-senha" /></div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={editForm.active} onChange={(e) => setEditForm((s) => ({ ...s, active: e.target.checked }))} className="h-4 w-4 accent-[hsl(var(--primary))]" data-testid="edit-user-active" /> Usuário ativo</label>
+            <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setEditUser(null)}>Cancelar</Button><Button onClick={saveEdit} data-testid="edit-user-save">Salvar</Button></div>
           </div>
         </DialogContent>
       </Dialog>

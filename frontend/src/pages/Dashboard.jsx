@@ -1,53 +1,81 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { PageHeader, KpiCard } from "@/components/ui/page";
-import { StatusBadge } from "@/components/StatusBadge";
-import { ClipboardList, CheckCircle2, AlertTriangle, Target, Boxes, Loader2 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page";
+import { Boxes, Package, Truck, Factory, ShieldCheck, Warehouse, MapPin, ArrowRight } from "lucide-react";
+
+const MODULES = [
+  { key: "inventario", icon: Boxes, nome: "Inventário", desc: "Gestão e controle de inventários físicos, pontos de corte, coletas e pendências.", to: "/inventario/registros", available: true },
+  { key: "estoque", icon: Package, nome: "Estoque", desc: "Controle de saldos, movimentações e níveis de estoque.", available: false },
+  { key: "expedicao", icon: Truck, nome: "Expedição", desc: "Separação, carregamento e expedição de cargas.", available: false },
+  { key: "producao", icon: Factory, nome: "Produção", desc: "Ordens de produção, apontamentos e eficiência.", available: false },
+  { key: "qualidade", icon: ShieldCheck, nome: "Qualidade", desc: "Inspeções, não conformidades e certificados.", available: false },
+  { key: "almoxarifado", icon: Warehouse, nome: "Almoxarifado", desc: "Requisições, materiais e consumo interno.", available: false },
+  { key: "patio", icon: MapPin, nome: "Pátio", desc: "Gestão de pátio, posições e movimentação de veículos.", available: false },
+];
 
 export default function Dashboard() {
   const { user } = useAuth();
   const nav = useNavigate();
-  const [data, setData] = useState(null);
+  const [perms, setPerms] = useState(null);
 
-  useEffect(() => { api.get("/dashboard").then((r) => setData(r.data)).catch(() => setData(false)); }, []);
+  useEffect(() => { setPerms(user?.permissions || {}); }, [user]);
 
-  if (data === null) return <div className="grid place-items-center py-20 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /></div>;
-  if (data === false) return <PageHeader title={`Bem-vindo, ${user?.nome}`} subtitle="GAMA — Gestão Industrial" />;
+  const canAccess = (m) => {
+    if (user?.role === "company_admin") return true;
+    if (user?.role === "system_admin") return false;
+    const sub = perms?.[m.key] || {};
+    return Object.values(sub).some((arr) => Array.isArray(arr) && arr.length > 0);
+  };
+
+  const visible = MODULES.filter((m) => m.available && canAccess(m));
+
+  if (user?.role === "system_admin") {
+    return (
+      <div className="space-y-6">
+        <PageHeader title={`Bem-vindo, ${user?.nome?.split(" ")[0] || ""}`} subtitle="GAMA — Administração do Sistema" testid="gama-dashboard-header" />
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="group rounded-2xl border border-border bg-card p-6 flex flex-col hover:border-primary/50 transition-colors" data-testid="admin-card-empresas">
+            <div className="grid h-12 w-12 place-items-center rounded-xl bg-primary/15 text-primary mb-4"><Factory className="h-6 w-6" /></div>
+            <h3 className="font-heading text-xl font-bold">Empresas</h3>
+            <p className="text-sm text-muted-foreground mt-2 flex-1">Cadastre empresas, gere chaves de validação e gerencie administradores.</p>
+            <button onClick={() => nav("/empresas")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary group-hover:gap-3 transition-all">Gerenciar empresas <ArrowRight className="h-4 w-4" /></button>
+          </div>
+          <div className="group rounded-2xl border border-border bg-card p-6 flex flex-col hover:border-primary/50 transition-colors" data-testid="admin-card-auditoria">
+            <div className="grid h-12 w-12 place-items-center rounded-xl bg-primary/15 text-primary mb-4"><ShieldCheck className="h-6 w-6" /></div>
+            <h3 className="font-heading text-xl font-bold">Auditoria</h3>
+            <p className="text-sm text-muted-foreground mt-2 flex-1">Histórico de ações e alterações em todas as empresas da plataforma.</p>
+            <button onClick={() => nav("/auditoria")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary group-hover:gap-3 transition-all">Ver auditoria <ArrowRight className="h-4 w-4" /></button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <PageHeader title="GAMA — Dashboard" subtitle="Visão geral do módulo Inventário" testid="gama-dashboard-header" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard label="Em andamento" value={data.em_andamento} icon={ClipboardList} testid="kpi-em-andamento" />
-        <KpiCard label="Concluídos" value={data.concluidos} icon={CheckCircle2} accent="text-emerald-400" testid="kpi-concluidos" />
-        <KpiCard label="Pendências abertas" value={data.pendencias_abertas} icon={AlertTriangle} accent="text-amber-400" testid="kpi-pendencias" />
-        <KpiCard label="Acuracidade média" value={`${data.acuracidade_media}%`} icon={Target} accent="text-cyan-400" testid="kpi-acuracidade" />
-        <KpiCard label="Total UDs" value={data.total_uds.toLocaleString("pt-BR")} icon={Boxes} testid="kpi-total-uds" />
-      </div>
-
-      <div className="rounded-xl border border-border bg-card">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-          <h3 className="font-heading text-lg font-semibold">Inventários recentes</h3>
-        </div>
-        <div className="divide-y divide-border">
-          {data.recentes.length === 0 && <div className="px-5 py-8 text-center text-muted-foreground text-sm">Nenhum inventário ainda.</div>}
-          {data.recentes.map((inv) => (
-            <button key={inv.id} onClick={() => nav(`/inventario/registros/${inv.id}`)} className="w-full px-5 py-3 flex items-center justify-between hover:bg-accent/40 text-left" data-testid={`recent-inv-${inv.id}`}>
-              <div className="flex items-center gap-4">
-                <span className="font-mono font-semibold text-primary">{inv.codigo}</span>
-                <span className="text-sm">{inv.tipo}</span>
-                <span className="text-xs text-muted-foreground">{inv.grupo_produtos}</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-xs text-muted-foreground">{inv.qtd_uds} UDs</span>
-                <span className="text-xs text-muted-foreground">{inv.acuracidade}%</span>
-                <StatusBadge status={inv.status} />
-              </div>
+      <PageHeader title={`Bem-vindo, ${user?.nome?.split(" ")[0] || ""}`} subtitle="GAMA — Gestão Industrial · selecione um módulo" testid="gama-dashboard-header" />
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {visible.map((m) => (
+          <div key={m.key} className="group rounded-2xl border border-border bg-card p-6 flex flex-col hover:border-primary/50 transition-colors" data-testid={`module-card-${m.key}`}>
+            <div className="grid h-12 w-12 place-items-center rounded-xl bg-primary/15 text-primary mb-4"><m.icon className="h-6 w-6" /></div>
+            <h3 className="font-heading text-xl font-bold">{m.nome}</h3>
+            <p className="text-sm text-muted-foreground mt-2 flex-1">{m.desc}</p>
+            <button onClick={() => nav(m.to)} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary group-hover:gap-3 transition-all" data-testid={`access-module-${m.key}`}>
+              Acessar módulo <ArrowRight className="h-4 w-4" />
             </button>
-          ))}
-        </div>
+          </div>
+        ))}
+        {/* upcoming modules — shown as locked previews only to admins */}
+        {(user?.role === "company_admin") && MODULES.filter((m) => !m.available).map((m) => (
+          <div key={m.key} className="rounded-2xl border border-dashed border-border bg-card/40 p-6 flex flex-col opacity-60" data-testid={`module-soon-${m.key}`}>
+            <div className="grid h-12 w-12 place-items-center rounded-xl bg-secondary text-muted-foreground mb-4"><m.icon className="h-6 w-6" /></div>
+            <h3 className="font-heading text-xl font-bold">{m.nome}</h3>
+            <p className="text-sm text-muted-foreground mt-2 flex-1">{m.desc}</p>
+            <span className="mt-5 text-xs uppercase tracking-wider text-muted-foreground">Em breve</span>
+          </div>
+        ))}
       </div>
     </div>
   );

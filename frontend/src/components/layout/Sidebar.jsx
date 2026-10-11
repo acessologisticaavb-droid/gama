@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, Building2, Users, Boxes, ClipboardList, AlertTriangle,
-  Database, ScrollText, ChevronRight,
+  Database, ScrollText, ChevronRight, UserCircle,
 } from "lucide-react";
 
 const linkCls = ({ isActive }) =>
@@ -54,6 +54,8 @@ export default function Sidebar({ collapsed }) {
         )}
 
         {isCompanyAdmin && <div className="pt-2"><Item to="/auditoria" icon={ScrollText} label="Auditoria" testid="nav-auditoria" /></div>}
+
+        <div className="pt-2"><Item to="/perfil" icon={UserCircle} label="Meu Perfil" testid="nav-perfil" /></div>
       </nav>
 
       {!collapsed && (

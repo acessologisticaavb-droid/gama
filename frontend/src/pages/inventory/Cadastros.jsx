@@ -93,31 +93,39 @@ function Produtos() {
   );
 }
 
-function CrudPanel({ endpoint, field, placeholder, prefix }) {
+function CrudPanel({ endpoint, field, placeholder, prefix, label }) {
   const [rows, setRows] = useState([]);
   const [val, setVal] = useState("");
   const load = async () => { const { data } = await api.get(endpoint); setRows(data); };
   useEffect(() => { load(); }, []);
   const add = async (e) => { e.preventDefault(); try { await api.post(endpoint, { [field]: val }); setVal(""); load(); toast.success("Criado"); } catch (e) { toast.error(apiError(e.response?.data?.detail)); } };
-  const del = async (id) => { if (!window.confirm("Excluir?")) return; await api.delete(`${endpoint}/${id}`); load(); };
+  const del = async (id) => { if (!window.confirm("Deseja realmente excluir este registro?")) return; await api.delete(`${endpoint}/${id}`); load(); };
+  const [search, setSearch] = useState("");
+  const view = rows.filter((r) => String(r[field] ?? "").toLowerCase().includes(search.toLowerCase()));
   return (
     <div className="space-y-4">
       <form onSubmit={add} className="flex gap-2 max-w-xl"><Input placeholder={placeholder} value={val} onChange={(e) => setVal(e.target.value)} required data-testid={`${prefix}-input`} /><Button type="submit" data-testid={`${prefix}-add`}><Plus className="h-4 w-4 mr-1" />Adicionar</Button></form>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {rows.map((r) => (
-          <div key={r.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2.5" data-testid={`${prefix}-row-${r.id}`}>
-            <span className="font-mono text-sm">{r[field]}</span>
-            <button onClick={() => del(r.id)}><Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" /></button>
-          </div>
-        ))}
-        {rows.length === 0 && <p className="text-muted-foreground text-sm col-span-full">Nenhum registro.</p>}
+      <div className="relative max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Pesquisar…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid={`${prefix}-search`} /></div>
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="text-left px-4 py-3">{label}</th><th className="px-4 py-3 w-16"></th></tr></thead>
+          <tbody>
+            {view.map((r) => (
+              <tr key={r.id} className="border-t border-border hover:bg-accent/40" data-testid={`${prefix}-row-${r.id}`}>
+                <td className="px-4 py-2.5 font-mono">{r[field]}</td>
+                <td className="px-4 py-2.5 text-right"><button onClick={() => del(r.id)} data-testid={`${prefix}-del-${r.id}`}><Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" /></button></td>
+              </tr>
+            ))}
+            {view.length === 0 && <tr><td colSpan={2} className="text-center py-8 text-muted-foreground">Nenhum registro.</td></tr>}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
 
-const Enderecos = () => <CrudPanel endpoint="/addresses" field="nome_posicao" placeholder="Ex.: EXT-RA-B01" prefix="addr" />;
-const Grupos = () => <CrudPanel endpoint="/inv-groups" field="nome" placeholder="Ex.: Inventário Rotativo" prefix="grp" />;
+const Enderecos = () => <CrudPanel endpoint="/addresses" field="nome_posicao" placeholder="Ex.: EXT-RA-B01" prefix="addr" label="Nome da Posição" />;
+const Grupos = () => <CrudPanel endpoint="/inv-groups" field="nome" placeholder="Ex.: Inventário Rotativo" prefix="grp" label="Tipo de Inventário" />;
 
 function Gatilhos() {
   const [rows, setRows] = useState([]);
@@ -125,7 +133,7 @@ function Gatilhos() {
   const load = async () => { const { data } = await api.get("/triggers"); setRows(data); };
   useEffect(() => { load(); }, []);
   const add = async (e) => { e.preventDefault(); try { await api.post("/triggers", form); setForm({ nome: "", motivo: "SKU faltante" }); load(); toast.success("Gatilho criado"); } catch (e) { toast.error(apiError(e.response?.data?.detail)); } };
-  const del = async (id) => { if (!window.confirm("Excluir?")) return; await api.delete(`/triggers/${id}`); load(); };
+  const del = async (id) => { if (!window.confirm("Deseja realmente excluir este registro?")) return; await api.delete(`/triggers/${id}`); load(); };
   return (
     <div className="space-y-4">
       <form onSubmit={add} className="grid gap-2 sm:grid-cols-3 rounded-xl border border-border bg-card p-4 max-w-2xl">
@@ -136,14 +144,20 @@ function Gatilhos() {
         </Select>
         <Button type="submit" data-testid="trigger-add-btn"><Plus className="h-4 w-4 mr-1" />Adicionar</Button>
       </form>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {rows.map((r) => (
-          <div key={r.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3" data-testid={`trigger-row-${r.id}`}>
-            <div><div className="font-medium text-sm">{r.nome}</div><div className="text-xs text-muted-foreground">{r.motivo}</div></div>
-            <button onClick={() => del(r.id)}><Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" /></button>
-          </div>
-        ))}
-        {rows.length === 0 && <p className="text-muted-foreground text-sm col-span-full">Nenhum gatilho.</p>}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="text-left px-4 py-3">Nome do Gatilho</th><th className="text-left px-4 py-3">Motivo</th><th className="px-4 py-3 w-16"></th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-t border-border hover:bg-accent/40" data-testid={`trigger-row-${r.id}`}>
+                <td className="px-4 py-2.5 font-medium">{r.nome}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{r.motivo}</td>
+                <td className="px-4 py-2.5 text-right"><button onClick={() => del(r.id)} data-testid={`trigger-del-${r.id}`}><Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" /></button></td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={3} className="text-center py-8 text-muted-foreground">Nenhum gatilho.</td></tr>}
+          </tbody>
+        </table>
       </div>
     </div>
   );

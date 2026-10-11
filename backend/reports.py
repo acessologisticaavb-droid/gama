@@ -11,6 +11,7 @@ from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.utils import ImageReader
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.graphics.charts.piecharts import Pie
@@ -30,6 +31,7 @@ DADOS_GERAIS_COLUMNS = [
     ("motivo", "Motivo"),
     ("resolucao", "Resolução"),
     ("resolucao_status", "Status Resolução"),
+    ("concluido_por", "Concluído Por"),
     ("data_resolucao", "Data Resolução"),
 ]
 
@@ -119,13 +121,19 @@ def build_pdf(company, inventory, kpis, resumo_material, pendencias, trigger_kpi
     normal = styles["Normal"]
     elems = []
 
-    # Header
+    # Header — logo preserved with aspect ratio (object-fit: contain), no artificial background
     header_cells = []
     logo = company.get("logo")
     if logo and isinstance(logo, str) and logo.startswith("data:image"):
         try:
             b64 = logo.split(",", 1)[1]
-            img = Image(io.BytesIO(base64.b64decode(b64)), width=28 * mm, height=28 * mm)
+            raw = base64.b64decode(b64)
+            ir = ImageReader(io.BytesIO(raw))
+            iw, ih = ir.getSize()
+            max_w, max_h = 38 * mm, 24 * mm
+            ratio = min(max_w / iw, max_h / ih)
+            img = Image(io.BytesIO(raw), width=iw * ratio, height=ih * ratio)
+            img.hAlign = "LEFT"
             header_cells.append(img)
         except Exception:
             header_cells.append(Paragraph("GAMA", title_style))
@@ -166,13 +174,20 @@ def build_pdf(company, inventory, kpis, resumo_material, pendencias, trigger_kpi
     elems.append(kt)
     elems.append(Spacer(1, 12))
 
-    # Charts
+    # Charts — relatório gerencial visual
     elems.append(Paragraph("Gráficos", h2))
-    chart_row = Table([[
+    row1 = Table([[
         _bar_chart([kpis["cutoff_total"], kpis["physical_total"]], ["Sistema", "Coletadas"], "UDs"),
-        _pie_chart([max(kpis["contagem_ok"], 0.0001), max(kpis["faltantes"] + kpis["fora_sistema"] + kpis["duplicadas"] + kpis["sem_etiqueta"], 0.0001)], ["OK", "Pend."]),
+        _pie_chart([max(kpis["posicao_correta"], 0.0001), max(kpis["posicao_errada"], 0.0001)], ["Correta", "Errada"]),
     ]], colWidths=[90 * mm, 85 * mm])
-    elems.append(chart_row)
+    elems.append(row1)
+    elems.append(Spacer(1, 6))
+    pend_total = kpis["faltantes"] + kpis["fora_sistema"] + kpis["duplicadas"] + kpis["sem_etiqueta"]
+    row2 = Table([[
+        _pie_chart([max(kpis["contagem_ok"], 0.0001), max(pend_total, 0.0001)], ["OK", "Pend."]),
+        _bar_chart(list(trigger_kpis.values()) or [0], list(trigger_kpis.keys()) or ["—"], "Gatilhos"),
+    ]], colWidths=[85 * mm, 90 * mm])
+    elems.append(row2)
     elems.append(Spacer(1, 12))
 
     # Trigger KPIs

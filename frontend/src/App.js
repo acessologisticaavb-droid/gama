@@ -14,6 +14,7 @@ import Inventarios from "@/pages/inventory/Inventarios";
 import InventoryDetail from "@/pages/inventory/InventoryDetail";
 import Pendencias from "@/pages/inventory/Pendencias";
 import Audit from "@/pages/Audit";
+import Profile from "@/pages/Profile";
 
 function Gate({ children }) {
   const { user, booting } = useAuth();
@@ -40,6 +41,7 @@ function Routing() {
         <Route path="/inventario/registros" element={<Inventarios />} />
         <Route path="/inventario/registros/:iid" element={<InventoryDetail />} />
         <Route path="/inventario/pendencias" element={<Pendencias />} />
+        <Route path="/perfil" element={<Profile />} />
         <Route path="/auditoria" element={<Audit />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

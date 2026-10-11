@@ -159,4 +159,5 @@ def _make_record(status, c, p, skuf, validacao_posicao):
         "resolucao": "",
         "resolucao_status": "Pendente" if is_pend else "",
         "data_resolucao": None,
+        "concluido_por": "",
     }

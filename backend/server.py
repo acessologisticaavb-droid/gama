@@ -17,13 +17,14 @@ from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+from pymongo import UpdateOne
 from unidecode import unidecode
 import pandas as pd
 
 import auth as auth_lib
 from models import (
     LoginInput, ValidateKeyInput, ChangePasswordInput, CompanyCreate, CompanyAdminCreate,
-    UserCreate, PermissionUpdate, ProductIn, AddressIn, InvGroupIn, TriggerIn,
+    UserCreate, UserEdit, ProfileUpdate, PermissionUpdate, ProductIn, AddressIn, InvGroupIn, TriggerIn,
     InventoryCreate, RecordUpdate, now_iso,
 )
 import engine
@@ -63,6 +64,7 @@ def public_user(u: dict) -> dict:
         "must_change_password": u.get("must_change_password", False),
         "permissions": u.get("permissions", {}),
         "email": u.get("email"),
+        "foto": u.get("foto"),
     }
 
 
@@ -246,6 +248,14 @@ async def change_password(body: ChangePasswordInput, user: dict = Depends(get_cu
     return {"ok": True}
 
 
+@api.put("/auth/profile")
+async def update_profile(body: ProfileUpdate, user: dict = Depends(get_current_user)):
+    # Users can change their own photo only — never their own permissions/role.
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"foto": body.foto}})
+    u = await db.users.find_one({"_id": user["_id"]})
+    return public_user(u)
+
+
 # ======================= Companies (system admin) =======================
 def require_system_admin(user: dict = Depends(get_current_user)):
     if user.get("role") != "system_admin":
@@ -388,7 +398,8 @@ async def list_users(user: dict = Depends(require_company_admin)):
     async for u in db.users.find({"company_id": cid}):
         out.append({"id": str(u["_id"]), "username": u["username"], "nome": u["nome"],
                     "funcao": u.get("funcao", ""), "role": u["role"], "validated": u.get("validated", False),
-                    "active": u.get("active", True), "permissions": u.get("permissions", {})})
+                    "active": u.get("active", True), "permissions": u.get("permissions", {}),
+                    "foto": u.get("foto")})
     return out
 
 
@@ -404,13 +415,28 @@ async def update_permissions(uid: str, body: PermissionUpdate, user: dict = Depe
 
 
 @api.put("/users/{uid}")
-async def edit_user(uid: str, body: UserCreate, user: dict = Depends(require_company_admin)):
+async def edit_user(uid: str, body: UserEdit, user: dict = Depends(require_company_admin)):
     cid = company_scope(user)
-    upd = {"nome": body.nome, "funcao": body.funcao}
+    target = await db.users.find_one({"_id": oid(uid), "company_id": cid})
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    upd = {}
+    if body.nome is not None:
+        upd["nome"] = body.nome
+    if body.funcao is not None:
+        upd["funcao"] = body.funcao
+    if body.active is not None:
+        upd["active"] = body.active
+    if body.foto is not None:
+        upd["foto"] = body.foto
+    if body.permissions is not None:
+        upd["permissions"] = body.permissions
     if body.senha:
         upd["password_hash"] = auth_lib.hash_password(body.senha)
         upd["must_change_password"] = True
-    await db.users.update_one({"_id": oid(uid), "company_id": cid}, {"$set": upd})
+    if upd:
+        await db.users.update_one({"_id": oid(uid), "company_id": cid}, {"$set": upd})
+    await audit(cid, user, "Edição de usuário", "usuarios", target["nome"])
     return {"ok": True}
 
 
@@ -603,7 +629,8 @@ def _inv_out(inv):
             "periodo": inv.get("periodo"), "status": inv.get("status"),
             "qtd_uds": inv.get("qtd_uds", 0), "pendencias": inv.get("pendencias", 0),
             "acuracidade": inv.get("acuracidade", 0), "has_cutoff": inv.get("has_cutoff", False),
-            "has_physical": inv.get("has_physical", False), "created_at": inv.get("created_at")}
+            "has_physical": inv.get("has_physical", False), "created_at": inv.get("created_at"),
+            "created_by": inv.get("created_by")}
 
 
 @api.post("/inventories")
@@ -729,6 +756,41 @@ async def import_physical(iid: str, commit: bool = Query(False), user: dict = De
 async def _process_validation(iid, cid, user):
     cutoff = [dict(r) async for r in db.inv_cutoff_rows.find({"inventory_id": iid})]
     physical = [dict(r) async for r in db.inv_physical_rows.find({"inventory_id": iid})]
+
+    # Build lookups for cross-validation / enrichment
+    cutoff_by_sku = {}
+    for c in cutoff:
+        sku = str(c.get("sku_sistema", "")).strip()
+        if sku and sku not in cutoff_by_sku:
+            cutoff_by_sku[sku] = c
+    physical_sku_set = {str(p.get("sku_fisico", "")).strip() for p in physical}
+
+    # Ponto de Corte: Validação do SKU
+    cut_ops = []
+    for c in cutoff:
+        sku = str(c.get("sku_sistema", "")).strip()
+        val = "SKU encontrado Fisico" if sku in physical_sku_set else "SKU faltante"
+        cut_ops.append(UpdateOne({"_id": c["_id"]}, {"$set": {"validacao_sku": val}}))
+    if cut_ops:
+        await db.inv_cutoff_rows.bulk_write(cut_ops)
+
+    # Coleta Física: complementação automática a partir do Ponto de Corte
+    FORA = "SKU fora do sistema"
+    phy_ops = []
+    for p in physical:
+        skuf = str(p.get("sku_fisico", "")).strip()
+        c = cutoff_by_sku.get(skuf)
+        if c:
+            enr = {"cod_material": str(c.get("cod_material", "")), "descricao": str(c.get("descricao", "")),
+                   "lote": str(c.get("lote", "")), "pos_sistema": str(c.get("pos_sistema", "")),
+                   "dias_estoque": str(c.get("dias_estoque", "")), "peso": c.get("peso", 0)}
+        else:
+            enr = {"cod_material": FORA, "descricao": FORA, "lote": FORA,
+                   "pos_sistema": FORA, "dias_estoque": FORA, "peso": FORA}
+        phy_ops.append(UpdateOne({"_id": p["_id"]}, {"$set": enr}))
+    if phy_ops:
+        await db.inv_physical_rows.bulk_write(phy_ops)
+
     records, counters = engine.run_validation(cutoff, physical)
     for r in records:
         r["inventory_id"] = iid
@@ -775,12 +837,17 @@ async def get_physical(iid: str, user: dict = Depends(require_validated), skip: 
 
 
 @api.get("/inventories/{iid}/records")
-async def get_records(iid: str, user: dict = Depends(require_validated), status: str = "", skip: int = 0, limit: int = 100):
+async def get_records(iid: str, user: dict = Depends(require_validated), status: str = "", gatilho: str = "", skip: int = 0, limit: int = 100):
     cid = company_scope(user)
     await _get_inventory(iid, cid)
     q = {"inventory_id": iid}
-    if status:
+    if gatilho:
+        q["gatilho"] = gatilho
+        q["status_inventario"] = {"$in": [engine.STATUS_FALTANTE, engine.STATUS_FORA]}
+    elif status:
         q["status_inventario"] = status
+        if status in (engine.STATUS_FALTANTE, engine.STATUS_FORA):
+            q["gatilho"] = ""
     total = await db.inv_records.count_documents(q)
     rows = [_proj(r) async for r in db.inv_records.find(q).skip(skip).limit(min(limit, 500))]
     return {"total": total, "rows": rows}
@@ -790,12 +857,22 @@ async def get_records(iid: str, user: dict = Depends(require_validated), status:
 async def pendencia_tabs(iid: str, user: dict = Depends(require_validated)):
     cid = company_scope(user)
     await _get_inventory(iid, cid)
-    out = {}
-    for st in [engine.STATUS_FALTANTE, engine.STATUS_FORA, engine.STATUS_DUPLICADA, engine.STATUS_SEM_ETIQUETA]:
+    base = {}
+    for st in [engine.STATUS_FALTANTE, engine.STATUS_FORA]:
+        c = await db.inv_records.count_documents({"inventory_id": iid, "status_inventario": st, "gatilho": ""})
+        if c > 0:
+            base[st] = c
+    for st in [engine.STATUS_DUPLICADA, engine.STATUS_SEM_ETIQUETA]:
         c = await db.inv_records.count_documents({"inventory_id": iid, "status_inventario": st})
         if c > 0:
-            out[st] = c
-    return out
+            base[st] = c
+    gatilhos = {}
+    async for g in db.inv_records.aggregate([
+        {"$match": {"inventory_id": iid, "status_inventario": {"$in": [engine.STATUS_FALTANTE, engine.STATUS_FORA]}, "gatilho": {"$ne": ""}}},
+        {"$group": {"_id": "$gatilho", "count": {"$sum": 1}}}]):
+        if g["_id"]:
+            gatilhos[g["_id"]] = g["count"]
+    return {"base": base, "gatilhos": gatilhos}
 
 
 @api.put("/records/{rid}")
@@ -812,7 +889,12 @@ async def update_record(rid: str, body: RecordUpdate, user: dict = Depends(requi
         upd["resolucao"] = body.resolucao
     if body.resolucao_status is not None:
         upd["resolucao_status"] = body.resolucao_status
-        upd["data_resolucao"] = now_iso() if body.resolucao_status == "Concluído" else None
+        if body.resolucao_status == "Concluído":
+            upd["data_resolucao"] = now_iso()
+            upd["concluido_por"] = user.get("nome")
+        else:
+            upd["data_resolucao"] = None
+            upd["concluido_por"] = ""
     await db.inv_records.update_one({"rid": rid}, {"$set": upd})
     inv = await db.inventories.find_one({"_id": oid(rec["inventory_id"])})
     await audit(cid, user, "Atualização de pendência", "pendencias",
@@ -940,7 +1022,7 @@ async def report_pdf(iid: str, user: dict = Depends(require_validated)):
 
 # ======================= Pendências globais =======================
 @api.get("/pendencias")
-async def global_pendencias(user: dict = Depends(require_validated), status_resolucao: str = "", gatilho: str = "", tipo: str = ""):
+async def global_pendencias(user: dict = Depends(require_validated), status_resolucao: str = "", gatilho: str = "", tipo: str = "", search: str = ""):
     cid = company_scope(user)
     q = {"company_id": cid, "is_pendencia": True}
     if status_resolucao:
@@ -950,8 +1032,9 @@ async def global_pendencias(user: dict = Depends(require_validated), status_reso
     inv_map = {}
     async for inv in db.inventories.find({"company_id": cid}):
         inv_map[str(inv["_id"])] = inv
+    s = search.strip().lower()
     out = []
-    async for r in db.inv_records.find(q).limit(3000):
+    async for r in db.inv_records.find(q).limit(5000):
         inv = inv_map.get(r["inventory_id"], {})
         if tipo and inv.get("tipo") != tipo:
             continue
@@ -963,14 +1046,29 @@ async def global_pendencias(user: dict = Depends(require_validated), status_reso
             dias = (end - base).days
         except Exception:
             dias = ""
-        out.append({"rid": r["rid"], "codigo": inv.get("codigo"), "data_inventario": data_inv,
-                    "tipo": inv.get("tipo"), "grupo_produtos": inv.get("grupo_produtos"),
-                    "cod_material": r.get("cod_material"), "descricao": r.get("descricao"),
-                    "sku": r.get("sku_fisico") or r.get("sku_sistema"), "lote": r.get("lote"),
-                    "gatilho": r.get("gatilho"), "motivo": r.get("motivo"), "resolucao": r.get("resolucao"),
-                    "status": r.get("resolucao_status"), "status_inventario": r.get("status_inventario"),
-                    "data_resolucao": r.get("data_resolucao"), "dias_pendencia": dias})
+        item = {"rid": r["rid"], "codigo": inv.get("codigo"), "data_inventario": data_inv,
+                "tipo": inv.get("tipo"), "grupo_produtos": inv.get("grupo_produtos"),
+                "cod_material": r.get("cod_material"), "descricao": r.get("descricao"),
+                "sku": r.get("sku_fisico") or r.get("sku_sistema"), "lote": r.get("lote"),
+                "gatilho": r.get("gatilho"), "motivo": r.get("motivo"), "resolucao": r.get("resolucao"),
+                "status": r.get("resolucao_status"), "status_inventario": r.get("status_inventario"),
+                "data_resolucao": r.get("data_resolucao"), "concluido_por": r.get("concluido_por", ""),
+                "dias_pendencia": dias}
+        if s:
+            hay = " ".join(str(v or "") for v in [item["codigo"], item["cod_material"], item["descricao"],
+                           item["sku"], item["lote"], item["gatilho"], item["resolucao"],
+                           item["concluido_por"], item["status"]]).lower()
+            if s not in hay:
+                continue
+        out.append(item)
     return out
+
+
+@api.get("/classificacoes")
+async def classificacoes(user: dict = Depends(require_validated)):
+    cid = company_scope(user)
+    vals = await db.inv_records.distinct("gatilho", {"company_id": cid, "is_pendencia": True, "gatilho": {"$ne": ""}})
+    return sorted([v for v in vals if v])
 
 
 # ======================= GAMA Dashboard =======================

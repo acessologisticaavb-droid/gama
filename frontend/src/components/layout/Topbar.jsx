@@ -1,7 +1,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { PanelLeft, LogOut } from "lucide-react";
+import { PanelLeft, LogOut, UserCircle } from "lucide-react";
 
 const LABELS = {
   "": "Dashboard", empresas: "Empresas", usuarios: "Usuários & Acessos",
@@ -33,13 +33,17 @@ export default function Topbar({ onToggle }) {
         </nav>
       </div>
       <div className="flex items-center gap-4">
-        <div className="text-right leading-tight hidden sm:block">
-          <div className="text-sm font-medium">{user?.nome}</div>
-          <div className="text-[11px] text-muted-foreground font-mono uppercase tracking-wide">{roleLabel}</div>
-        </div>
-        <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 text-primary text-sm font-semibold">
-          {(user?.nome || "U").slice(0, 1).toUpperCase()}
-        </div>
+        <button onClick={() => nav("/perfil")} className="flex items-center gap-3 rounded-lg hover:bg-accent px-2 py-1 transition-colors" data-testid="topbar-profile-btn">
+          <div className="text-right leading-tight hidden sm:block">
+            <div className="text-sm font-medium">{user?.nome}</div>
+            <div className="text-[11px] text-muted-foreground font-mono uppercase tracking-wide">{roleLabel}</div>
+          </div>
+          {user?.foto ? (
+            <img src={user.foto} alt="perfil" className="h-9 w-9 rounded-full object-cover border border-border" data-testid="topbar-avatar" />
+          ) : (
+            <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 text-primary"><UserCircle className="h-6 w-6" /></div>
+          )}
+        </button>
         <Button variant="ghost" size="icon" onClick={doLogout} data-testid="logout-button" title="Sair"><LogOut className="h-5 w-5" /></Button>
       </div>
     </header>

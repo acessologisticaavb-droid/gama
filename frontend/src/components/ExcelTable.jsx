@@ -1,33 +1,49 @@
 import { useState, useMemo, useRef } from "react";
-import { ArrowUpDown, Filter, Trash2, Copy, ClipboardPaste, X } from "lucide-react";
+import { ArrowUpDown, Filter, Trash2, Copy, ClipboardPaste, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /**
- * Excel-like grid.
- * columns: [{ key, label, editable?, type?: 'text'|'select', options?: [{value,label}] }]
+ * Excel-like grid with per-column unique-value filters.
+ * columns: [{ key, label, editable?, type?: 'text'|'select', options?, render? }]
  * rows: array of objects (must have `rid`)
- * onCellChange(rid, key, value)  onDeleteRow(rid)  canDelete
  */
 export default function ExcelTable({ columns, rows, onCellChange, onDeleteRow, canDelete = false, testid = "excel-table" }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
-  const [filters, setFilters] = useState({});
+  const [filters, setFilters] = useState({}); // { key: [values] }
   const [openFilter, setOpenFilter] = useState(null);
-  const [editing, setEditing] = useState(null); // { rid, key }
-  const [sel, setSel] = useState([]); // array of {r,key}
+  const [valSearch, setValSearch] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [sel, setSel] = useState([]);
   const [clip, setClip] = useState(null);
   const anchor = useRef(null);
 
+  const uniqueValues = (key) => {
+    const set = new Set(rows.map((r) => String(r[key] ?? "")));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt", { numeric: true }));
+  };
+
   const view = useMemo(() => {
     let data = [...rows];
-    Object.entries(filters).forEach(([k, v]) => {
-      if (v) data = data.filter((row) => String(row[k] ?? "").toLowerCase().includes(v.toLowerCase()));
+    Object.entries(filters).forEach(([k, vals]) => {
+      if (vals && vals.length) {
+        const s = new Set(vals);
+        data = data.filter((row) => s.has(String(row[k] ?? "")));
+      }
     });
     if (sort.key) data.sort((a, b) => String(a[sort.key] ?? "").localeCompare(String(b[sort.key] ?? ""), "pt", { numeric: true }) * sort.dir);
     return data;
   }, [rows, filters, sort]);
 
   const toggleSort = (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : 1 }));
+
+  const toggleValue = (key, v) => setFilters((f) => {
+    const cur = new Set(f[key] || []);
+    cur.has(v) ? cur.delete(v) : cur.add(v);
+    return { ...f, [key]: Array.from(cur) };
+  });
+  const selectAll = (key) => setFilters((f) => ({ ...f, [key]: uniqueValues(key) }));
+  const clearCol = (key) => setFilters((f) => ({ ...f, [key]: [] }));
 
   const selectCell = (rIdx, key, shift) => {
     const col = columns.find((c) => c.key === key);
@@ -40,25 +56,12 @@ export default function ExcelTable({ columns, rows, onCellChange, onDeleteRow, c
       setSel([{ r: rIdx, key }]);
     }
   };
-
-  const copySel = () => {
-    if (!sel.length) return;
-    const first = view[sel[0].r];
-    setClip(String(first?.[sel[0].key] ?? ""));
-  };
-  const pasteSel = () => {
-    if (clip == null || !sel.length) return;
-    sel.forEach(({ r, key }) => {
-      const row = view[r];
-      if (row) onCellChange(row.rid, key, clip);
-    });
-  };
-
+  const copySel = () => { if (sel.length) setClip(String(view[sel[0].r]?.[sel[0].key] ?? "")); };
+  const pasteSel = () => { if (clip != null) sel.forEach(({ r, key }) => { const row = view[r]; if (row) onCellChange(row.rid, key, clip); }); };
   const onKey = (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "c") { copySel(); }
-    if ((e.ctrlKey || e.metaKey) && e.key === "v") { pasteSel(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === "c") copySel();
+    if ((e.ctrlKey || e.metaKey) && e.key === "v") pasteSel();
   };
-
   const isSel = (rIdx, key) => sel.some((s) => s.r === rIdx && s.key === key);
 
   return (
@@ -73,23 +76,47 @@ export default function ExcelTable({ columns, rows, onCellChange, onDeleteRow, c
       )}
       <div className="overflow-auto rounded-lg border border-border max-h-[65vh]">
         <table className="w-full border-collapse text-xs font-mono">
-          <thead className="sticky top-0 z-10 bg-secondary">
+          <thead className="sticky top-0 z-20 bg-secondary">
             <tr>
-              {columns.map((c) => (
-                <th key={c.key} className="border border-border px-2 py-2 text-left font-semibold whitespace-nowrap">
-                  <div className="flex items-center gap-1">
-                    <button className="flex items-center gap-1 hover:text-primary" onClick={() => toggleSort(c.key)} data-testid={`sort-${c.key}`}>
-                      {c.label} <ArrowUpDown className="h-3 w-3 opacity-50" />
-                    </button>
-                    <button className={`ml-auto ${filters[c.key] ? "text-primary" : "opacity-40 hover:opacity-100"}`} onClick={() => setOpenFilter(openFilter === c.key ? null : c.key)} data-testid={`filter-${c.key}`}>
-                      <Filter className="h-3 w-3" />
-                    </button>
-                  </div>
-                  {openFilter === c.key && (
-                    <Input autoFocus value={filters[c.key] || ""} onChange={(e) => setFilters((f) => ({ ...f, [c.key]: e.target.value }))} placeholder="filtrar…" className="mt-1 h-7 text-xs" data-testid={`filter-input-${c.key}`} />
-                  )}
-                </th>
-              ))}
+              {columns.map((c) => {
+                const active = (filters[c.key] || []).length > 0;
+                const vals = openFilter === c.key ? uniqueValues(c.key).filter((v) => v.toLowerCase().includes(valSearch.toLowerCase())) : [];
+                return (
+                  <th key={c.key} className="border border-border px-2 py-2 text-left font-semibold whitespace-nowrap relative">
+                    <div className="flex items-center gap-1">
+                      <button className="flex items-center gap-1 hover:text-primary" onClick={() => toggleSort(c.key)} data-testid={`sort-${c.key}`}>
+                        {c.label} <ArrowUpDown className="h-3 w-3 opacity-50" />
+                      </button>
+                      <button className={`ml-auto ${active ? "text-primary" : "opacity-40 hover:opacity-100"}`} onClick={() => { setOpenFilter(openFilter === c.key ? null : c.key); setValSearch(""); }} data-testid={`filter-${c.key}`}>
+                        <Filter className="h-3 w-3" />
+                      </button>
+                    </div>
+                    {openFilter === c.key && (
+                      <div className="absolute left-0 top-full z-30 mt-1 w-56 rounded-lg border border-border bg-popover p-2 shadow-xl" data-testid={`filter-popover-${c.key}`}>
+                        <Input autoFocus value={valSearch} onChange={(e) => setValSearch(e.target.value)} placeholder="Pesquisar valores…" className="h-7 text-xs mb-2" data-testid={`filter-search-${c.key}`} />
+                        <div className="flex items-center justify-between text-[11px] mb-1.5">
+                          <button className="text-primary hover:underline" onClick={() => selectAll(c.key)}>Selecionar todos</button>
+                          <button className="text-muted-foreground hover:underline" onClick={() => clearCol(c.key)}>Limpar</button>
+                        </div>
+                        <div className="max-h-48 overflow-auto space-y-0.5">
+                          {vals.map((v) => {
+                            const checked = (filters[c.key] || []).includes(v);
+                            return (
+                              <label key={v} className="flex items-center gap-2 px-1 py-0.5 rounded hover:bg-accent cursor-pointer text-xs" data-testid={`filter-opt-${c.key}`}>
+                                <span className={`grid h-3.5 w-3.5 place-items-center rounded border ${checked ? "bg-primary border-primary" : "border-border"}`}>{checked && <Check className="h-2.5 w-2.5 text-primary-foreground" />}</span>
+                                <input type="checkbox" className="hidden" checked={checked} onChange={() => toggleValue(c.key, v)} />
+                                <span className="truncate">{v === "" ? "(vazio)" : v}</span>
+                              </label>
+                            );
+                          })}
+                          {vals.length === 0 && <p className="text-[11px] text-muted-foreground px-1 py-2">Nenhum valor.</p>}
+                        </div>
+                        <Button size="sm" className="h-7 w-full mt-2 text-xs" onClick={() => setOpenFilter(null)}>Fechar</Button>
+                      </div>
+                    )}
+                  </th>
+                );
+              })}
               {canDelete && <th className="border border-border px-2 py-2 w-10"></th>}
             </tr>
           </thead>
@@ -109,29 +136,17 @@ export default function ExcelTable({ columns, rows, onCellChange, onDeleteRow, c
                       data-testid={`cell-${c.key}-${rIdx}`}
                     >
                       {isEditing && c.type === "select" ? (
-                        <select
-                          autoFocus
-                          className="bg-background border border-primary rounded px-1 py-0.5 text-xs"
-                          value={val || ""}
-                          onChange={(e) => { onCellChange(row.rid, c.key, e.target.value); setEditing(null); }}
-                          onBlur={() => setEditing(null)}
-                          data-testid={`edit-select-${c.key}-${rIdx}`}
-                        >
+                        <select autoFocus className="bg-background border border-primary rounded px-1 py-0.5 text-xs" value={val || ""}
+                          onChange={(e) => { onCellChange(row.rid, c.key, e.target.value); setEditing(null); }} onBlur={() => setEditing(null)} data-testid={`edit-select-${c.key}-${rIdx}`}>
                           <option value="">—</option>
                           {(c.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       ) : isEditing ? (
-                        <input
-                          autoFocus
-                          defaultValue={val || ""}
-                          className="bg-background border border-primary rounded px-1 py-0.5 text-xs w-full"
+                        <input autoFocus defaultValue={val || ""} className="bg-background border border-primary rounded px-1 py-0.5 text-xs w-full"
                           onBlur={(e) => { onCellChange(row.rid, c.key, e.target.value); setEditing(null); }}
                           onKeyDown={(e) => { if (e.key === "Enter") { onCellChange(row.rid, c.key, e.target.value); setEditing(null); } if (e.key === "Escape") setEditing(null); }}
-                          data-testid={`edit-input-${c.key}-${rIdx}`}
-                        />
-                      ) : c.render ? (
-                        c.render(val, row)
-                      ) : (
+                          data-testid={`edit-input-${c.key}-${rIdx}`} />
+                      ) : c.render ? c.render(val, row) : (
                         <span className={val == null || val === "" ? "text-muted-foreground" : ""}>{val == null || val === "" ? "—" : String(val)}</span>
                       )}
                     </td>
@@ -150,7 +165,7 @@ export default function ExcelTable({ columns, rows, onCellChange, onDeleteRow, c
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-muted-foreground">Dê um duplo clique para editar. Selecione células (Shift+clique) e use Copiar/Colar para preencher em massa.</p>
+      <p className="text-[11px] text-muted-foreground">Clique no funil para filtrar por valores únicos. Duplo clique para editar; selecione células (Shift+clique) e use Copiar/Colar.</p>
     </div>
   );
 }

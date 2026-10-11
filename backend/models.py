@@ -68,6 +68,19 @@ class UserCreate(BaseModel):
     senha: Optional[str] = None
 
 
+class UserEdit(BaseModel):
+    nome: Optional[str] = None
+    funcao: Optional[str] = None
+    senha: Optional[str] = None
+    active: Optional[bool] = None
+    foto: Optional[str] = None
+    permissions: Optional[dict] = None
+
+
+class ProfileUpdate(BaseModel):
+    foto: Optional[str] = None
+
+
 class PermissionUpdate(BaseModel):
     permissions: dict
 
