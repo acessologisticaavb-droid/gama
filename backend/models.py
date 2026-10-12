@@ -79,6 +79,7 @@ class UserEdit(BaseModel):
 
 class ProfileUpdate(BaseModel):
     foto: Optional[str] = None
+    funcao: Optional[str] = None
 
 
 class PermissionUpdate(BaseModel):

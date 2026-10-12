@@ -5,6 +5,10 @@ import "@/index.css";
 import App from "@/App";
 import { queryClient } from "@/lib/queryClient";
 
+if (localStorage.getItem("gama-theme") === "light") {
+  document.documentElement.classList.add("light");
+}
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>

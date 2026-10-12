@@ -250,8 +250,15 @@ async def change_password(body: ChangePasswordInput, user: dict = Depends(get_cu
 
 @api.put("/auth/profile")
 async def update_profile(body: ProfileUpdate, user: dict = Depends(get_current_user)):
-    # Users can change their own photo only — never their own permissions/role.
-    await db.users.update_one({"_id": user["_id"]}, {"$set": {"foto": body.foto}})
+    # Users may change their own photo and cadastral "função" only — never permissions/role.
+    data = body.model_dump(exclude_unset=True)
+    upd = {}
+    if "foto" in data:
+        upd["foto"] = data["foto"]
+    if "funcao" in data:
+        upd["funcao"] = data["funcao"]
+    if upd:
+        await db.users.update_one({"_id": user["_id"]}, {"$set": upd})
     u = await db.users.find_one({"_id": user["_id"]})
     return public_user(u)
 
@@ -677,18 +684,6 @@ async def delete_inventory(iid: str, user: dict = Depends(require_validated)):
     return {"ok": True}
 
 
-@api.put("/inventories/{iid}/status")
-async def set_status(iid: str, status: str = Query(...), user: dict = Depends(require_validated)):
-    cid = company_scope(user)
-    valid = ["Planejado", "Em andamento", "Em validação", "Com pendências", "Concluído", "Cancelado"]
-    if status not in valid:
-        raise HTTPException(status_code=400, detail="Status inválido.")
-    inv = await _get_inventory(iid, cid)
-    await db.inventories.update_one({"_id": oid(iid)}, {"$set": {"status": status}})
-    await audit(cid, user, f"Alteração de status para {status}", "lancamentos", inv["codigo"], inv.get("status"), status)
-    return {"ok": True}
-
-
 @api.post("/inventories/{iid}/import-cutoff")
 async def import_cutoff(iid: str, commit: bool = Query(False), user: dict = Depends(require_validated), file: UploadFile = File(...)):
     check_perm(user, "inventario", "lancamentos", "importar")
@@ -769,7 +764,7 @@ async def _process_validation(iid, cid, user):
     cut_ops = []
     for c in cutoff:
         sku = str(c.get("sku_sistema", "")).strip()
-        val = "SKU encontrado Fisico" if sku in physical_sku_set else "SKU faltante"
+        val = "SKU no fisico" if sku in physical_sku_set else "SKU faltante"
         cut_ops.append(UpdateOne({"_id": c["_id"]}, {"$set": {"validacao_sku": val}}))
     if cut_ops:
         await db.inv_cutoff_rows.bulk_write(cut_ops)
@@ -800,9 +795,20 @@ async def _process_validation(iid, cid, user):
         await db.inv_records.insert_many(records)
     pend = counters["faltantes"] + counters["fora_sistema"] + counters["duplicadas"] + counters["sem_etiqueta"]
     acuracidade = round((counters["contagem_ok"] / counters["cutoff_total"] * 100), 1) if counters["cutoff_total"] else 0
-    status = "Com pendências" if pend > 0 else "Em validação"
     await db.inventories.update_one({"_id": oid(iid)}, {"$set": {
-        "has_physical": True, "pendencias": pend, "acuracidade": acuracidade, "status": status}})
+        "has_physical": True, "pendencias": pend, "acuracidade": acuracidade}})
+    await _recompute_status(iid)
+
+
+async def _recompute_status(iid):
+    """Status é consequência automática do estado das pendências — nunca manual."""
+    inv = await db.inventories.find_one({"_id": oid(iid)})
+    if not inv or not inv.get("has_physical"):
+        return
+    pend_open = await db.inv_records.count_documents(
+        {"inventory_id": iid, "is_pendencia": True, "resolucao_status": {"$ne": "Concluído"}})
+    status = "Concluído" if pend_open == 0 else "Com pendências"
+    await db.inventories.update_one({"_id": oid(iid)}, {"$set": {"status": status}})
 
 
 def _proj(d):
@@ -896,6 +902,7 @@ async def update_record(rid: str, body: RecordUpdate, user: dict = Depends(requi
             upd["data_resolucao"] = None
             upd["concluido_por"] = ""
     await db.inv_records.update_one({"rid": rid}, {"$set": upd})
+    await _recompute_status(rec["inventory_id"])
     inv = await db.inventories.find_one({"_id": oid(rec["inventory_id"])})
     await audit(cid, user, "Atualização de pendência", "pendencias",
                 f"{inv['codigo']} / {rec.get('sku_fisico') or rec.get('sku_sistema')}", rec.get("resolucao_status"), upd)
@@ -910,6 +917,7 @@ async def delete_record(rid: str, user: dict = Depends(require_validated)):
     if not rec:
         raise HTTPException(status_code=404, detail="Registro não encontrado.")
     await db.inv_records.delete_one({"rid": rid})
+    await _recompute_status(rec["inventory_id"])
     await audit(cid, user, "Exclusão de registro", "pendencias", rid)
     return {"ok": True}
 
@@ -986,7 +994,14 @@ async def dados_gerais(iid: str, user: dict = Depends(require_validated), skip: 
     cid = company_scope(user)
     await _get_inventory(iid, cid)
     total = await db.inv_records.count_documents({"inventory_id": iid})
-    rows = [_proj(r) async for r in db.inv_records.find({"inventory_id": iid}).skip(skip).limit(min(limit, 500))]
+    sd = {"CONTAGEM OK": "SKU no fisico", "SKU FALTANTE": "SKU faltante",
+          "SKU FORA DO SISTEMA": "SKU fora do sistema", "UD DUPLICADA": "UD duplicada",
+          "SEM ETIQUETA": "Sem etiqueta"}
+    rows = []
+    async for r in db.inv_records.find({"inventory_id": iid}).skip(skip).limit(min(limit, 500)):
+        row = _proj(r)
+        row["status_dados"] = sd.get(row.get("status_inventario"), row.get("status_inventario"))
+        rows.append(row)
     return {"total": total, "rows": rows}
 
 

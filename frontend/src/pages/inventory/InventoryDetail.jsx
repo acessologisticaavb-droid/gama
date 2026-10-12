@@ -47,11 +47,6 @@ export default function InventoryDetail() {
     } catch (e) { toast.error(apiError(e.response?.data?.detail, "Falha ao gerar arquivo.")); }
   };
 
-  const changeStatus = async (status) => {
-    try { await api.put(`/inventories/${iid}/status?status=${encodeURIComponent(status)}`); toast.success("Status atualizado"); loadInv(); }
-    catch (e) { toast.error(apiError(e.response?.data?.detail)); }
-  };
-
   if (!inv) return <div className="grid place-items-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   const afterImport = () => { loadInv(); loadTabs(); };
@@ -61,10 +56,6 @@ export default function InventoryDetail() {
       <Button variant="ghost" size="sm" onClick={() => nav("/inventario/registros")} data-testid="back-inventarios"><ArrowLeft className="h-4 w-4 mr-1" /> Inventários</Button>
       <PageHeader title={inv.codigo} subtitle={`${inv.tipo} · ${inv.grupo_produtos} · ${inv.data} · ${inv.periodo}`} testid="inv-detail-header">
         <StatusBadge status={inv.status} />
-        <Select value={inv.status} onValueChange={changeStatus}>
-          <SelectTrigger className="w-44" data-testid="inv-status-select"><SelectValue /></SelectTrigger>
-          <SelectContent>{["Planejado", "Em andamento", "Em validação", "Com pendências", "Concluído", "Cancelado"].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-        </Select>
       </PageHeader>
 
       <div className="flex flex-wrap gap-2">
@@ -140,33 +131,17 @@ function Relatorio({ iid, inv }) {
         <KpiCard label="% Acuracidade" value={`${k.perc_acuracidade}%`} icon={CheckCircle2} accent="text-emerald-400" testid="kpi-perc-acc" />
       </div>
 
-      {chart4.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <ChartCard title="KPIs por Gatilho">
-            <BarChart data={chart4}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" /><XAxis dataKey="name" tick={{ fontSize: 10, fill: "#9CA3AF" }} /><YAxis tick={{ fontSize: 10, fill: "#9CA3AF" }} allowDecimals={false} /><Tooltip contentStyle={tooltipStyle} /><Bar dataKey="v" fill="#F59E0B" radius={[4, 4, 0, 0]} /></BarChart>
-          </ChartCard>
-        </div>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <ChartCard title="UDs Sistema × Coletadas">
           <BarChart data={chart1}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" /><XAxis dataKey="name" tick={{ fontSize: 10, fill: "#9CA3AF" }} /><YAxis tick={{ fontSize: 10, fill: "#9CA3AF" }} allowDecimals={false} /><Tooltip contentStyle={tooltipStyle} /><Bar dataKey="v" fill="#3B82F6" radius={[4, 4, 0, 0]} /></BarChart>
         </ChartCard>
-        <ChartCard title="Posição Correta × Errada">
-          <PieChart><Pie data={chart2} dataKey="v" nameKey="name" cx="50%" cy="50%" outerRadius={70} label>{chart2.map((e, i) => <Cell key={i} fill={[COLORS[1], COLORS[3]][i]} />)}</Pie><Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart>
-        </ChartCard>
-        <ChartCard title="Contagem OK × Pendências">
-          <PieChart><Pie data={chart3} dataKey="v" nameKey="name" cx="50%" cy="50%" outerRadius={70} label>{chart3.map((e, i) => <Cell key={i} fill={[COLORS[1], COLORS[2]][i]} />)}</Pie><Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart>
-        </ChartCard>
+        <ChartCard title="Posição Correta × Errada"><DonutPie data={chart2} colors={[COLORS[1], COLORS[3]]} /></ChartCard>
+        <ChartCard title="Contagem OK × Pendências"><DonutPie data={chart3} colors={[COLORS[1], COLORS[2]]} /></ChartCard>
+        <ChartCard title="Acuracidade"><DonutSingle value={k.perc_acuracidade} color={COLORS[1]} /></ChartCard>
+        <ChartCard title="% Posição Correta"><DonutSingle value={k.perc_posicao} color={COLORS[4]} /></ChartCard>
+        {chart4.length > 0 && <ChartCard title="Pendências por Gatilho"><BarChart data={chart4}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" /><XAxis dataKey="name" tick={{ fontSize: 10, fill: "#9CA3AF" }} /><YAxis tick={{ fontSize: 10, fill: "#9CA3AF" }} allowDecimals={false} /><Tooltip contentStyle={tooltipStyle} /><Bar dataKey="v" fill="#F59E0B" radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
+        {chart5.some((c) => c.v > 0) && <ChartCard title="Status das Pendências"><DonutPie data={chart5} colors={[COLORS[2], COLORS[1]]} /></ChartCard>}
       </div>
-
-      {chart5.some((c) => c.v > 0) && (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <ChartCard title="Status das Pendências">
-            <PieChart><Pie data={chart5} dataKey="v" nameKey="name" cx="50%" cy="50%" outerRadius={70} label>{chart5.map((e, i) => <Cell key={i} fill={[COLORS[2], COLORS[1]][i]} />)}</Pie><Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart>
-          </ChartCard>
-        </div>
-      )}
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="px-5 py-3 border-b border-border"><h3 className="font-heading font-semibold">Resumo por Material</h3></div>
@@ -194,6 +169,29 @@ function ChartCard({ title, children }) {
       <h4 className="text-sm font-semibold mb-3">{title}</h4>
       <ResponsiveContainer width="100%" height={200}>{children}</ResponsiveContainer>
     </div>
+  );
+}
+
+function DonutPie({ data, colors }) {
+  return (
+    <PieChart>
+      <Pie data={data} dataKey="v" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={72} paddingAngle={2} label>
+        {data.map((e, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+      </Pie>
+      <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+    </PieChart>
+  );
+}
+
+function DonutSingle({ value, color }) {
+  const d = [{ name: "Valor", v: value }, { name: "Restante", v: Math.max(0, 100 - value) }];
+  return (
+    <PieChart>
+      <Pie data={d} dataKey="v" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={72} startAngle={90} endAngle={-270} stroke="none">
+        <Cell fill={color} /><Cell fill="#ffffff12" />
+      </Pie>
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fill="currentColor" fontSize={20} fontWeight={700}>{value}%</text>
+    </PieChart>
   );
 }
 
@@ -246,7 +244,7 @@ function DadosGerais({ iid }) {
     { key: "cod_material", label: "Material" }, { key: "descricao", label: "Descrição" }, { key: "lote", label: "Lote" },
     { key: "peso", label: "Peso" }, { key: "pos_sistema", label: "Pos. Sistema" }, { key: "pos_fisica", label: "Pos. Física" },
     { key: "validacao_posicao", label: "Validação Posição", render: (v) => <InvBadge value={v} /> },
-    { key: "status_inventario", label: "Status Inventário", render: (v) => <InvBadge value={v} /> },
+    { key: "status_dados", label: "Status Inventário", render: (v) => <InvBadge value={v} /> },
     { key: "gatilho", label: "Gatilho" }, { key: "motivo", label: "Motivo" },
     { key: "resolucao", label: "Resolução" }, { key: "resolucao_status", label: "Status Resol." },
   ];

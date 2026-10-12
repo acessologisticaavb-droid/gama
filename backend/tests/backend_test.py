@@ -404,11 +404,11 @@ class TestCutoffValidacaoSku:
         assert rows, "cutoff should have rows"
         for row in rows:
             assert "validacao_sku" in row, f"missing validacao_sku: {row}"
-            assert row["validacao_sku"] in ("SKU encontrado Fisico", "SKU faltante"), \
+            assert row["validacao_sku"] in ("SKU no fisico", "SKU faltante"), \
                 f"invalid value: {row['validacao_sku']}"
         # at least one of each expected (per prompt sample has faltante)
         vals = {r["validacao_sku"] for r in rows}
-        assert "SKU encontrado Fisico" in vals
+        assert "SKU no fisico" in vals
         assert "SKU faltante" in vals
 
 

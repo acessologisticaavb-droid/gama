@@ -21,10 +21,15 @@ export function StatusBadge({ status }) {
 
 const INV_MAP = {
   "CONTAGEM OK": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  "SKU no fisico": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   "SKU FALTANTE": "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  "SKU faltante": "bg-amber-500/15 text-amber-400 border-amber-500/30",
   "SKU FORA DO SISTEMA": "bg-red-500/15 text-red-400 border-red-500/30",
+  "SKU fora do sistema": "bg-red-500/15 text-red-400 border-red-500/30",
   "UD DUPLICADA": "bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30",
+  "UD duplicada": "bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30",
   "SEM ETIQUETA": "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  "Sem etiqueta": "bg-orange-500/15 text-orange-400 border-orange-500/30",
   "POSIÇÃO CORRETA": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   "POSIÇÃO ERRADA": "bg-red-500/15 text-red-400 border-red-500/30",
   Pendente: "bg-amber-500/15 text-amber-400 border-amber-500/30",

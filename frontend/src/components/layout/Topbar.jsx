@@ -1,7 +1,8 @@
 import { useAuth } from "@/context/AuthContext";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { PanelLeft, LogOut, UserCircle } from "lucide-react";
+import { PanelLeft, LogOut, UserCircle, Sun, Moon } from "lucide-react";
 
 const LABELS = {
   "": "Dashboard", empresas: "Empresas", usuarios: "Usuários & Acessos",
@@ -15,8 +16,15 @@ export default function Topbar({ onToggle }) {
   const loc = useLocation();
   const parts = loc.pathname.split("/").filter(Boolean);
   const roleLabel = { system_admin: "Admin do Sistema", company_admin: "Admin da Empresa", user: "Usuário" }[user?.role];
+  const [light, setLight] = useState(() => document.documentElement.classList.contains("light"));
 
   const doLogout = async () => { await logout(); nav("/login"); };
+  const toggleTheme = () => {
+    const next = !light;
+    setLight(next);
+    document.documentElement.classList.toggle("light", next);
+    localStorage.setItem("gama-theme", next ? "light" : "dark");
+  };
 
   return (
     <header className="h-16 sticky top-0 z-30 border-b border-border bg-card/90 backdrop-blur-md px-6 flex items-center justify-between">
@@ -44,6 +52,9 @@ export default function Topbar({ onToggle }) {
             <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 text-primary"><UserCircle className="h-6 w-6" /></div>
           )}
         </button>
+        <Button variant="ghost" size="icon" onClick={toggleTheme} data-testid="theme-toggle-btn" title={light ? "Modo escuro" : "Modo claro"}>
+          {light ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+        </Button>
         <Button variant="ghost" size="icon" onClick={doLogout} data-testid="logout-button" title="Sair"><LogOut className="h-5 w-5" /></Button>
       </div>
     </header>

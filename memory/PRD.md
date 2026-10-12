@@ -47,6 +47,20 @@ Sistema web corporativo multiempresa, multiusuário, modular, com controle rigor
 
 ## Credenciais adicionais
 - system_admin nomeado: alan_teixeira / ifma2013
+
+## Implemented (2026-06, update 3 — correções)
+- §1 Dashboard exibe somente módulos existentes/implementados (removidos cards "Em breve").
+- §2 Ponto de Corte "Validação do SKU": "SKU no fisico" (encontrado) / "SKU faltante" — cruzamento Unidade de Depósito ↔ SKU Físico no mesmo inventário.
+- §3 Coleta Física complementada automaticamente (material, descrição, lote, peso, posição sistema, dias) ou "SKU fora do sistema".
+- §4 Dados Gerais consolida TODOS os registros (incl. faltante/fora) com coluna Status mapeada (SKU no fisico / SKU faltante / SKU fora do sistema).
+- §5/§12 Fonte única de verdade (inv_records): alterar gatilho/resolução reflete em Pendências, abas e Dados Gerais.
+- §6 Removida a lista suspensa de status manual do inventário.
+- §7 Status do inventário calculado automaticamente: "Concluído" só quando todas as pendências estão concluídas; senão "Com pendências". Recalculado em import/update/delete de registros.
+- §8 Relatórios em grid responsivo uniforme (md:2 / xl:3 colunas).
+- §9 Todos os gráficos de pizza convertidos em rosca (Donut); donuts de Acuracidade e % Posição Correta.
+- §10 Modo claro/escuro com botão no topbar e persistência em localStorage (classe .light aplicada no boot).
+- §11 Perfil: usuário edita a própria função (apenas cadastral, sem conceder permissões).
+- Validado por e2e (/app/sample_data/e2e_new_rules.py) + 41/41 pytest.
 - P1: Popular dashboard inicial do system_admin com widgets agregados (contagens de empresas/usuários/pendências).
 - P2: Dividir `server.py` em routers por domínio.
 - P2: Filtro cruzado total entre gráficos (clique em categoria filtra tabelas).

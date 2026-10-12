@@ -7,12 +7,6 @@ import { Boxes, Package, Truck, Factory, ShieldCheck, Warehouse, MapPin, ArrowRi
 
 const MODULES = [
   { key: "inventario", icon: Boxes, nome: "Inventário", desc: "Gestão e controle de inventários físicos, pontos de corte, coletas e pendências.", to: "/inventario/registros", available: true },
-  { key: "estoque", icon: Package, nome: "Estoque", desc: "Controle de saldos, movimentações e níveis de estoque.", available: false },
-  { key: "expedicao", icon: Truck, nome: "Expedição", desc: "Separação, carregamento e expedição de cargas.", available: false },
-  { key: "producao", icon: Factory, nome: "Produção", desc: "Ordens de produção, apontamentos e eficiência.", available: false },
-  { key: "qualidade", icon: ShieldCheck, nome: "Qualidade", desc: "Inspeções, não conformidades e certificados.", available: false },
-  { key: "almoxarifado", icon: Warehouse, nome: "Almoxarifado", desc: "Requisições, materiais e consumo interno.", available: false },
-  { key: "patio", icon: MapPin, nome: "Pátio", desc: "Gestão de pátio, posições e movimentação de veículos.", available: false },
 ];
 
 export default function Dashboard() {
@@ -65,15 +59,6 @@ export default function Dashboard() {
             <button onClick={() => nav(m.to)} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary group-hover:gap-3 transition-all" data-testid={`access-module-${m.key}`}>
               Acessar módulo <ArrowRight className="h-4 w-4" />
             </button>
-          </div>
-        ))}
-        {/* upcoming modules — shown as locked previews only to admins */}
-        {(user?.role === "company_admin") && MODULES.filter((m) => !m.available).map((m) => (
-          <div key={m.key} className="rounded-2xl border border-dashed border-border bg-card/40 p-6 flex flex-col opacity-60" data-testid={`module-soon-${m.key}`}>
-            <div className="grid h-12 w-12 place-items-center rounded-xl bg-secondary text-muted-foreground mb-4"><m.icon className="h-6 w-6" /></div>
-            <h3 className="font-heading text-xl font-bold">{m.nome}</h3>
-            <p className="text-sm text-muted-foreground mt-2 flex-1">{m.desc}</p>
-            <span className="mt-5 text-xs uppercase tracking-wider text-muted-foreground">Em breve</span>
           </div>
         ))}
       </div>
