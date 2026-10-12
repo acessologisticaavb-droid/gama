@@ -590,21 +590,22 @@ class TestPendenciasSearchAndClassificacoes:
         assert all(x["gatilho"] == "Lançamento esquecido" for x in rows)
 
 
-# ============ Export Excel contains 'Concluído Por' column (§14) ============
+# ============ Export Excel is flat/tabular with inv metadata as columns (§Export) ============
 class TestExcelConcluidoPor:
-    def test_excel_has_concluido_por_column(self, company_session, company_ctx):
+    def test_excel_is_flat_tabular(self, company_session, company_ctx):
         import openpyxl
         r = company_session.get(f"{API}/inventories/{company_ctx['iid']}/export-excel")
         assert r.status_code == 200
         wb = openpyxl.load_workbook(io.BytesIO(r.content), read_only=True, data_only=True)
-        found = False
-        for sh in wb.sheetnames:
-            ws = wb[sh]
-            for row in ws.iter_rows(max_row=30, values_only=True):
-                cells = [str(c or "").strip().lower() for c in row]
-                if "concluído por" in cells or "concluido por" in cells:
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "expected a sheet with 'Concluído Por' column in export"
+        ws = wb[wb.sheetnames[0]]
+        rows = list(ws.iter_rows(values_only=True))
+        header = [str(c or "").strip() for c in rows[0]]
+        # Row 1 must be the header row (no institutional block above)
+        assert header[0] == "Empresa"
+        assert "CNPJ" in header and "Inventário" in header
+        assert "Status Inventario" in header
+        assert "Usuário que concluiu" in header
+        # Inventory metadata repeated on each data row
+        if len(rows) > 1:
+            assert str(rows[1][0] or "").strip() != ""  # Empresa repeated
+            assert str(rows[1][header.index("Inventário")] or "").startswith("INV-")

@@ -16,62 +16,89 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.graphics.charts.piecharts import Pie
 
+INV_META_COLUMNS = [
+    ("empresa", "Empresa"),
+    ("cnpj", "CNPJ"),
+    ("inventario", "Inventário"),
+    ("tipo", "Tipo de Inventário"),
+    ("grupo_produtos", "Grupo de Produtos"),
+    ("data", "Data do Inventário"),
+    ("periodo", "Período"),
+]
+
 DADOS_GERAIS_COLUMNS = [
     ("sku_sistema", "SKU Sistema"),
-    ("sku_fisico", "SKU Físico"),
-    ("cod_material", "Cód. Material"),
+    ("cod_material", "Código do Material"),
     ("descricao", "Descrição"),
     ("lote", "Lote"),
-    ("peso", "Peso"),
+    ("um", "Unidade de Medida"),
+    ("tipo_estoque", "Tipo de Estoque"),
     ("pos_sistema", "Posição Sistema"),
+    ("dias_estoque", "Dias em Estoque"),
+    ("peso", "Peso"),
+    ("sku_fisico", "SKU Físico"),
     ("pos_fisica", "Posição Física"),
+    ("cod_barras", "Código de Barras"),
     ("validacao_posicao", "Validação Posição"),
-    ("status_inventario", "Status Inventário"),
+    ("status_inventario", "Status Inventario"),
+    ("validacao_sku", "Validação SKU"),
     ("gatilho", "Gatilho"),
     ("motivo", "Motivo"),
     ("resolucao", "Resolução"),
-    ("resolucao_status", "Status Resolução"),
-    ("concluido_por", "Concluído Por"),
-    ("data_resolucao", "Data Resolução"),
+    ("resolucao_status", "Status da Resolução"),
+    ("data_resolucao", "Data de Conclusão"),
+    ("concluido_por", "Usuário que concluiu"),
 ]
+
+ALL_COLUMNS = INV_META_COLUMNS + DADOS_GERAIS_COLUMNS
+
+STATUS_DISPLAY = {
+    "CONTAGEM OK": "SKU no fisico", "SKU FALTANTE": "SKU faltante",
+    "SKU FORA DO SISTEMA": "SKU fora do sistema", "UD DUPLICADA": "UD duplicada",
+    "SEM ETIQUETA": "Sem etiqueta",
+}
 
 
 def build_excel(company, inventory, records) -> bytes:
+    """Flat, normalized sheet: row 1 = headers, each record = 1 row, inv metadata repeated per row."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Dados Gerais"
     bold = Font(bold=True, color="FFFFFF")
     fill = PatternFill("solid", fgColor="1F2937")
 
-    meta = [
-        ("Empresa", company.get("nome", "")),
-        ("CNPJ", company.get("cnpj", "")),
-        ("Inventário", inventory.get("codigo", "")),
-        ("Tipo", inventory.get("tipo", "")),
-        ("Grupo de Produtos", inventory.get("grupo_produtos", "")),
-        ("Data", inventory.get("data", "")),
-        ("Período", inventory.get("periodo", "")),
-    ]
-    r = 1
-    for k, v in meta:
-        ws.cell(row=r, column=1, value=k).font = Font(bold=True)
-        ws.cell(row=r, column=2, value=str(v))
-        r += 1
-    r += 1
-    header_row = r
-    for ci, (_, label) in enumerate(DADOS_GERAIS_COLUMNS, start=1):
-        cell = ws.cell(row=header_row, column=ci, value=label)
+    meta_values = {
+        "empresa": company.get("nome", ""),
+        "cnpj": company.get("cnpj", ""),
+        "inventario": inventory.get("codigo", ""),
+        "tipo": inventory.get("tipo", ""),
+        "grupo_produtos": inventory.get("grupo_produtos", ""),
+        "data": inventory.get("data", ""),
+        "periodo": inventory.get("periodo", ""),
+    }
+
+    # Row 1 = headers
+    for ci, (_, label) in enumerate(ALL_COLUMNS, start=1):
+        cell = ws.cell(row=1, column=ci, value=label)
         cell.font = bold
         cell.fill = fill
         cell.alignment = Alignment(horizontal="center")
-    r = header_row + 1
+
+    r = 2
     for rec in records:
-        for ci, (key, _) in enumerate(DADOS_GERAIS_COLUMNS, start=1):
-            val = rec.get(key, "")
+        for ci, (key, _) in enumerate(ALL_COLUMNS, start=1):
+            if key in meta_values:
+                val = meta_values[key]
+            elif key == "status_inventario":
+                val = STATUS_DISPLAY.get(rec.get(key), rec.get(key, ""))
+            else:
+                val = rec.get(key, "")
             ws.cell(row=r, column=ci, value="" if val is None else str(val))
         r += 1
-    for ci in range(1, len(DADOS_GERAIS_COLUMNS) + 1):
-        ws.column_dimensions[ws.cell(row=header_row, column=ci).column_letter].width = 18
+
+    for ci in range(1, len(ALL_COLUMNS) + 1):
+        ws.column_dimensions[ws.cell(row=1, column=ci).column_letter].width = 18
+    ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

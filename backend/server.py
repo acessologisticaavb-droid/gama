@@ -1055,7 +1055,25 @@ async def export_excel(iid: str, user: dict = Depends(require_validated)):
     cid = company_scope(user)
     inv = await _get_inventory(iid, cid)
     company = await db.companies.find_one({"_id": oid(cid)})
-    records = [dict(r) async for r in db.inv_records.find({"inventory_id": iid})]
+    # Cutoff lookup for fields not stored on records (UM, tipo de estoque, validação SKU)
+    cutoff_by_sku = {}
+    async for c in db.inv_cutoff_rows.find({"inventory_id": iid}):
+        sku = _norm_sku(c.get("sku_sistema"))
+        if sku and sku not in cutoff_by_sku:
+            cutoff_by_sku[sku] = c
+    records = []
+    async for r in db.inv_records.find({"inventory_id": iid}):
+        rec = dict(r)
+        c = cutoff_by_sku.get(_norm_sku(rec.get("sku_sistema")))
+        if c:
+            rec["um"] = str(c.get("um", ""))
+            rec["tipo_estoque"] = str(c.get("tipo_estoque", ""))
+            rec["validacao_sku"] = str(c.get("validacao_sku", ""))
+        else:
+            rec["um"] = ""
+            rec["tipo_estoque"] = ""
+            rec["validacao_sku"] = ""
+        records.append(rec)
     data = reports.build_excel(company, _inv_out(inv), records)
     await audit(cid, user, "Exportação Excel", "dados_gerais", inv["codigo"])
     return StreamingResponse(io.BytesIO(data),
