@@ -125,18 +125,53 @@ def set_auth_cookies(response: Response, user_id: str, username: str):
     response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
 
 
+async def ensure_initial_admin_for_login(username: str):
+    """Guarantee the configured initial administrator exists before authentication."""
+    configured_username = os.getenv("GAMA_INITIAL_ADMIN_USER", "alan_teixeira").strip().lower()
+    secret = os.getenv("GAMA_INITIAL_ADMIN_SECRET")
+    if username != configured_username or not secret:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    user = await db.users.find_one({"username": configured_username})
+    data = {
+        "username": configured_username,
+        "password_hash": auth_lib.hash_password(secret),
+        "nome": "Administrador do Sistema",
+        "funcao": "Administrador do Sistema",
+        "role": "system_admin",
+        "company_id": None,
+        "validated": True,
+        "must_change_password": False,
+        "permissions": {},
+        "active": True,
+        "updated_at": now,
+    }
+
+    if user:
+        await db.users.update_one({"_id": user["_id"]}, {"$set": data})
+    else:
+        data["created_at"] = now
+        await db.users.insert_one(data)
+
+
 # ======================= Auth =======================
 @api.post("/auth/login")
 async def login(body: LoginInput, request: Request, response: Response):
     username = body.username.strip().lower()
     ident = username
+
+    # The initial administrator is synchronized from Vercel environment variables
+    # at login time, so authentication does not depend on a cold-start bootstrap.
+    await ensure_initial_admin_for_login(username)
+
     attempt = await db.login_attempts.find_one({"identifier": ident})
     if attempt and attempt.get("count", 0) >= MAX_ATTEMPTS:
         locked = attempt.get("locked_until")
         if locked and datetime.fromisoformat(locked) > datetime.now(timezone.utc):
             raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente mais tarde.")
     user = await db.users.find_one({"username": username})
-    if not user or not auth_lib.verify_password(body.password, user["password_hash"]):
+    if not user or not user.get("active", True) or not auth_lib.verify_password(body.password, user["password_hash"]):
         cnt = (attempt.get("count", 0) if attempt else 0) + 1
         upd = {"count": cnt}
         if cnt >= MAX_ATTEMPTS:
