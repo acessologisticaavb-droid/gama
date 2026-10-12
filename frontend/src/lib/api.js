@@ -1,6 +1,9 @@
 import axios from "axios";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+// In production (Vercel), the frontend and API are served from the same domain.
+// Keep the API relative so requests go through the Vercel /api rewrite.
+const backendUrl = process.env.REACT_APP_BACKEND_URL;
+const API = backendUrl ? `${backendUrl.replace(/\/$/, "")}/api` : "/api";
 
 export const api = axios.create({
   baseURL: API,
