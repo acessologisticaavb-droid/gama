@@ -2,7 +2,6 @@ import os
 import logging
 from datetime import datetime, timezone
 from pymongo import MongoClient
-import auth
 
 logger = logging.getLogger("gama.bootstrap")
 
@@ -12,18 +11,23 @@ def ensure_initial_admin():
     secret = os.getenv("GAMA_INITIAL_ADMIN_SECRET")
     mongo_url = os.getenv("MONGO_URL")
     db_name = os.getenv("DB_NAME")
+
     if not secret or not mongo_url or not db_name:
-        logger.info("Initial admin bootstrap skipped: production bootstrap variables are not configured.")
+        logger.info("Initial admin bootstrap skipped: required variables are not configured.")
         return
+
     client = None
     try:
+        from auth import hash_password
+
         client = MongoClient(mongo_url, serverSelectionTimeoutMS=5000)
         db = client[db_name]
         now = datetime.now(timezone.utc).isoformat()
         existing = db.users.find_one({"username": username})
+
         data = {
             "username": username,
-            "password_hash": auth.hash_password(secret),
+            "password_hash": hash_password(secret),
             "nome": "Administrador do Sistema",
             "funcao": "Administrador do Sistema",
             "role": "system_admin",
@@ -34,6 +38,7 @@ def ensure_initial_admin():
             "active": True,
             "updated_at": now,
         }
+
         if existing:
             db.users.update_one({"_id": existing["_id"]}, {"$set": data})
             logger.info("Initial system administrator synchronized: %s", username)
