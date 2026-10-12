@@ -1021,19 +1021,32 @@ async def _resumo_material_data(iid):
 
 
 @api.get("/inventories/{iid}/dados-gerais")
-async def dados_gerais(iid: str, user: dict = Depends(require_validated), skip: int = 0, limit: int = 100):
+async def dados_gerais(iid: str, user: dict = Depends(require_validated), skip: int = 0, limit: int = 100, status: str = "", search: str = ""):
     cid = company_scope(user)
     await _get_inventory(iid, cid)
-    total = await db.inv_records.count_documents({"inventory_id": iid})
     sd = {"CONTAGEM OK": "SKU no fisico", "SKU FALTANTE": "SKU faltante",
           "SKU FORA DO SISTEMA": "SKU fora do sistema", "UD DUPLICADA": "UD duplicada",
           "SEM ETIQUETA": "Sem etiqueta"}
+    disp_to_eng = {v: k for k, v in sd.items()}
+    q = {"inventory_id": iid}
+    if status and status in disp_to_eng:
+        q["status_inventario"] = disp_to_eng[status]
+    if search:
+        rx = {"$regex": re.escape(search), "$options": "i"}
+        q["$or"] = [{"sku_sistema": rx}, {"sku_fisico": rx}, {"cod_material": rx},
+                    {"descricao": rx}, {"lote": rx}, {"gatilho": rx}]
+    total = await db.inv_records.count_documents(q)
+    # Consolidated counts per status (full inventory, ignoring current filter)
+    counts = {}
+    async for g in db.inv_records.aggregate([{"$match": {"inventory_id": iid}},
+            {"$group": {"_id": "$status_inventario", "n": {"$sum": 1}}}]):
+        counts[sd.get(g["_id"], g["_id"])] = g["n"]
     rows = []
-    async for r in db.inv_records.find({"inventory_id": iid}).skip(skip).limit(min(limit, 500)):
+    async for r in db.inv_records.find(q).skip(skip).limit(min(limit, 1000)):
         row = _proj(r)
         row["status_dados"] = sd.get(row.get("status_inventario"), row.get("status_inventario"))
         rows.append(row)
-    return {"total": total, "rows": rows}
+    return {"total": total, "rows": rows, "counts": counts}
 
 
 @api.get("/inventories/{iid}/export-excel")

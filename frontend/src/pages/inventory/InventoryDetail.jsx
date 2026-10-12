@@ -236,22 +236,63 @@ function PhysicalTab({ iid, hasData }) {
 }
 
 function DadosGerais({ iid }) {
-  const [data, setData] = useState({ rows: [], total: 0 });
-  useEffect(() => { api.get(`/inventories/${iid}/dados-gerais?limit=200`).then((r) => setData(r.data)).catch(() => {}); }, [iid]);
-  if (data.total === 0) return <Empty icon={FileSpreadsheet} title="Sem dados consolidados" hint="Importe Coleta Física para gerar os Dados Gerais." />;
+  const PAGE = 100;
+  const [data, setData] = useState({ rows: [], total: 0, counts: {} });
+  const [status, setStatus] = useState("todos");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    const st = status === "todos" ? "" : status;
+    const qs = `skip=${page * PAGE}&limit=${PAGE}&status=${encodeURIComponent(st)}&search=${encodeURIComponent(search)}`;
+    api.get(`/inventories/${iid}/dados-gerais?${qs}`).then((r) => setData(r.data)).catch(() => {});
+  }, [iid, status, search, page]);
+  useEffect(() => { setPage(0); }, [status, search]);
+
   const cols = [
     { key: "sku_sistema", label: "SKU Sistema" }, { key: "sku_fisico", label: "SKU Físico" },
+    { key: "cod_barras", label: "Cód. Barras" },
     { key: "cod_material", label: "Material" }, { key: "descricao", label: "Descrição" }, { key: "lote", label: "Lote" },
     { key: "peso", label: "Peso" }, { key: "pos_sistema", label: "Pos. Sistema" }, { key: "pos_fisica", label: "Pos. Física" },
     { key: "validacao_posicao", label: "Validação Posição", render: (v) => <InvBadge value={v} /> },
     { key: "status_dados", label: "Status Inventário", render: (v) => <InvBadge value={v} /> },
     { key: "gatilho", label: "Gatilho" }, { key: "motivo", label: "Motivo" },
     { key: "resolucao", label: "Resolução" }, { key: "resolucao_status", label: "Status Resol." },
+    { key: "concluido_por", label: "Concluído por" },
   ];
+  const c = data.counts || {};
+  const totalConsolidado = Object.values(c).reduce((a, b) => a + b, 0);
+  const from = data.total === 0 ? 0 : page * PAGE + 1;
+  const to = Math.min((page + 1) * PAGE, data.total);
+  const maxPage = Math.max(0, Math.ceil(data.total / PAGE) - 1);
+
   return (
     <div className="space-y-3">
-      <span className="text-sm text-muted-foreground">{data.total} registros consolidados</span>
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="w-52" data-testid="dados-status-filter"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos ({totalConsolidado})</SelectItem>
+              <SelectItem value="SKU no fisico">SKU no fisico ({c["SKU no fisico"] || 0})</SelectItem>
+              <SelectItem value="SKU faltante">SKU faltante ({c["SKU faltante"] || 0})</SelectItem>
+              <SelectItem value="SKU fora do sistema">SKU fora do sistema ({c["SKU fora do sistema"] || 0})</SelectItem>
+              <SelectItem value="UD duplicada">UD duplicada ({c["UD duplicada"] || 0})</SelectItem>
+              <SelectItem value="Sem etiqueta">Sem etiqueta ({c["Sem etiqueta"] || 0})</SelectItem>
+            </SelectContent>
+          </Select>
+          <input className="h-9 rounded-md border border-border bg-background px-3 text-sm" placeholder="Pesquisar SKU, material, lote, gatilho…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="dados-search" />
+        </div>
+        <span className="text-sm text-muted-foreground">{data.total === 0 ? "Nenhum registro" : `Mostrando ${from}–${to} de ${data.total}`}</span>
+      </div>
       <ExcelTable columns={cols} rows={data.rows.map((r) => ({ rid: r.rid, ...r }))} onCellChange={() => {}} testid="dados-gerais-table" />
+      {data.total > PAGE && (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} data-testid="dados-prev">Anterior</Button>
+          <span className="text-sm text-muted-foreground">Página {page + 1} de {maxPage + 1}</span>
+          <Button variant="outline" size="sm" disabled={page >= maxPage} onClick={() => setPage((p) => Math.min(maxPage, p + 1))} data-testid="dados-next">Próxima</Button>
+        </div>
+      )}
     </div>
   );
 }
