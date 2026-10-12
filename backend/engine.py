@@ -75,11 +75,19 @@ def sku_fisico_from_barcode(cod_barras) -> str:
     return str(cod_barras or "")[:10]
 
 
+def _norm_sku(v):
+    """Normalize a SKU for cross-matching: trim and drop trailing '.0' from numeric reads."""
+    s = str(v if v is not None else "").strip()
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    return s
+
+
 def run_validation(cutoff_rows, physical_rows):
     """Build consolidated Dados Gerais records and KPI counters."""
     cutoff_by_sku = {}
     for r in cutoff_rows:
-        sku = str(r.get("sku_sistema", "")).strip()
+        sku = _norm_sku(r.get("sku_sistema", ""))
         if sku and sku not in cutoff_by_sku:
             cutoff_by_sku[sku] = r
 
@@ -87,7 +95,7 @@ def run_validation(cutoff_rows, physical_rows):
     enriched_physical = []
     counts = {}
     for p in physical_rows:
-        skuf = sku_fisico_from_barcode(p.get("cod_barras", ""))
+        skuf = _norm_sku(sku_fisico_from_barcode(p.get("cod_barras", "")))
         enriched_physical.append((p, skuf))
         if skuf != "0000000000":
             counts[skuf] = counts.get(skuf, 0) + 1

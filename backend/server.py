@@ -755,15 +755,15 @@ async def _process_validation(iid, cid, user):
     # Build lookups for cross-validation / enrichment
     cutoff_by_sku = {}
     for c in cutoff:
-        sku = str(c.get("sku_sistema", "")).strip()
+        sku = _norm_sku(c.get("sku_sistema", ""))
         if sku and sku not in cutoff_by_sku:
             cutoff_by_sku[sku] = c
-    physical_sku_set = {str(p.get("sku_fisico", "")).strip() for p in physical}
+    physical_sku_set = {_norm_sku(p.get("sku_fisico", "")) for p in physical}
 
     # Ponto de Corte: Validação do SKU
     cut_ops = []
     for c in cutoff:
-        sku = str(c.get("sku_sistema", "")).strip()
+        sku = _norm_sku(c.get("sku_sistema", ""))
         val = "SKU no fisico" if sku in physical_sku_set else "SKU faltante"
         cut_ops.append(UpdateOne({"_id": c["_id"]}, {"$set": {"validacao_sku": val}}))
     if cut_ops:
@@ -773,7 +773,7 @@ async def _process_validation(iid, cid, user):
     FORA = "SKU fora do sistema"
     phy_ops = []
     for p in physical:
-        skuf = str(p.get("sku_fisico", "")).strip()
+        skuf = _norm_sku(p.get("sku_fisico", ""))
         c = cutoff_by_sku.get(skuf)
         if c:
             enr = {"cod_material": str(c.get("cod_material", "")), "descricao": str(c.get("descricao", "")),
@@ -818,6 +818,14 @@ def _proj(d):
     return d
 
 
+def _norm_sku(v):
+    """Normalize a SKU for cross-matching: trim and drop trailing '.0' from numeric reads."""
+    s = str(v if v is not None else "").strip()
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    return s
+
+
 @api.get("/inventories/{iid}/cutoff")
 async def get_cutoff(iid: str, user: dict = Depends(require_validated), skip: int = 0, limit: int = 50, search: str = ""):
     cid = company_scope(user)
@@ -836,9 +844,32 @@ async def get_cutoff(iid: str, user: dict = Depends(require_validated), skip: in
 async def get_physical(iid: str, user: dict = Depends(require_validated), skip: int = 0, limit: int = 50):
     cid = company_scope(user)
     await _get_inventory(iid, cid)
+    # Ponto de Corte é a fonte única: enriquecemos a Coleta Física em tempo de leitura,
+    # cruzando exclusivamente SKU Físico == Unidade de depósito / SKU Sistema do MESMO inventário.
+    cutoff_by_sku = {}
+    async for c in db.inv_cutoff_rows.find({"inventory_id": iid}):
+        sku = _norm_sku(c.get("sku_sistema"))
+        if sku and sku not in cutoff_by_sku:
+            cutoff_by_sku[sku] = c
+    FORA = "SKU fora do sistema"
+    enrich_keys = ["cod_material", "descricao", "lote", "pos_sistema", "dias_estoque", "peso"]
     q = {"inventory_id": iid}
     total = await db.inv_physical_rows.count_documents(q)
-    rows = [_proj(r) async for r in db.inv_physical_rows.find(q).skip(skip).limit(min(limit, 200))]
+    rows = []
+    async for p in db.inv_physical_rows.find(q).skip(skip).limit(min(limit, 500)):
+        row = _proj(p)
+        c = cutoff_by_sku.get(_norm_sku(row.get("sku_fisico")))
+        if c:
+            row["cod_material"] = str(c.get("cod_material", ""))
+            row["descricao"] = str(c.get("descricao", ""))
+            row["lote"] = str(c.get("lote", ""))
+            row["pos_sistema"] = str(c.get("pos_sistema", ""))
+            row["dias_estoque"] = c.get("dias_estoque", "")
+            row["peso"] = c.get("peso", 0)
+        else:
+            for k in enrich_keys:
+                row[k] = FORA
+        rows.append(row)
     return {"total": total, "rows": rows}
 
 
