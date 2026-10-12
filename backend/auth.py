@@ -43,11 +43,3 @@ def create_refresh_token(user_id: str) -> str:
 
 def decode_token(token: str) -> dict:
     return jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
-
-
-# Import at the end so the bootstrap module can safely reuse auth.hash_password.
-# The bootstrap runs only when the production bootstrap secret is configured.
-try:
-    import bootstrap  # noqa: F401,E402
-except Exception:
-    pass
